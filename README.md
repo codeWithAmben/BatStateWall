@@ -16,17 +16,36 @@ A full-stack public feedback wall built for **IT 412 Platform Technologies** at 
 BatStateWall/
 ├── public/
 │   ├── assets/
-│   │   ├── spartan-bg.png  # Left backdrop artwork
-│   │   └── campus-bg.png   # Right backdrop artwork
-│   ├── index.html          # Main feedback wall page
-│   ├── style.css           # Dark obsidian & BatStateU crimson glassmorphic styling
-│   └── app.js              # Frontend API calls, live counter, XSS-safe rendering
+│   │   ├── spartan-bg.png     # Left backdrop artwork
+│   │   ├── campus-bg.png      # Right backdrop artwork
+│   │   └── post-success.json  # Lottie checkmark confirmation animation
+│   ├── index.html             # Main feedback wall page
+│   ├── style.css              # Dark obsidian & crimson glassmorphic 3D styling
+│   ├── scene3d.js             # Three.js WebGL 3D background & card tilt/spotlight
+│   └── app.js                 # Frontend API calls, live counter, XSS-safe rendering
 ├── server.js               # Express server, PostgreSQL pool, and REST API endpoints
 ├── schema.sql              # SQL script to create the "items" table in Supabase
 ├── package.json            # Dependencies and "start" script
 ├── .env.example            # Sample environment variables template
 ├── .gitignore              # Excludes node_modules/ and .env from Git
+├── PAAS_REFLECTION.md      # Part 1: PaaS vs. IaaS Shared Responsibility reflection & diagram
 └── README.md               # Project documentation
+```
+
+## System Architecture & Cloud Reflection
+
+See [PAAS_REFLECTION.md](./PAAS_REFLECTION.md) for the full **Part 1: Cloud & PaaS Reflection** (PaaS vs. IaaS Shared Responsibility Model justification).
+
+```mermaid
+flowchart LR
+    Client["Client (Web Browser / Postman)"]
+    Render["Render PaaS Web Service (Node.js + Express)"]
+    Supabase["Supabase Managed PostgreSQL (Session Pooler + SSL)"]
+
+    Client -->|"HTTPS Requests (GET /, GET /api/items, POST /api/items)"| Render
+    Render -->|"HTML, CSS, JS & JSON Responses (200, 201, 400, 404)"| Client
+    Render -->|"Parameterized SQL over TLS (pg.Pool + DATABASE_URL)"| Supabase
+    Supabase -->|"Query Results (public.items rows)"| Render
 ```
 
 ---

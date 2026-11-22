@@ -11,15 +11,25 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js"
+        }
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/lottie-web@5.12.2/build/player/lottie_svg.min.js" defer></script>
+    <script type="module" src="scene3d.js"></script>
     <script src="app.js" defer></script>
   </head>
   <body>
-    <!-- Atmospheric dark obsidian & crimson backdrop -->
+    <!-- Atmospheric dark obsidian & crimson backdrop with interactive Three.js WebGL layer -->
     <div class="page-backdrop" aria-hidden="true">
       <div class="backdrop-grid"></div>
       <div class="backdrop-glow"></div>
       <img src="assets/spartan-bg.png" alt="" class="backdrop-art backdrop-left" />
       <img src="assets/campus-bg.png" alt="" class="backdrop-art backdrop-right" />
+      <canvas id="webgl-bg" class="webgl-bg"></canvas>
     </div>
 
     <!-- Top navigation / brand header -->
@@ -28,13 +38,23 @@
         <div class="brand-group">
           <div class="brand-emblem" aria-hidden="true">
             <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="crestGrad" x1="10" y1="5" x2="28" y2="14" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#ff6b6b" />
+                  <stop offset="100%" stop-color="#d32f2f" />
+                </linearGradient>
+                <linearGradient id="helmGrad" x1="10" y1="10" x2="26" y2="30" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#ffffff" />
+                  <stop offset="100%" stop-color="#d4d4d8" />
+                </linearGradient>
+              </defs>
               <path
-                d="M11 7.5C15.5 4.2 22.8 4.4 27 8.5L23.5 11.2C20.2 8.7 15.6 8.6 12.2 10.6L11 7.5Z"
-                fill="#ef4444"
+                d="M10.5 7.6C15.2 4 23 4.3 27.4 8.7L23.8 11.4C20.4 8.8 15.5 8.7 12 10.8L10.5 7.6Z"
+                fill="url(#crestGrad)"
               />
               <path
-                d="M18 10.5C12.8 10.5 9.5 14.1 9.5 19.2V25.5L14.5 29.5V22.8L12.5 20.8V17.8L16.5 19.2V29.8H19.5V19.2L23.5 17.8V20.8L21.5 22.8V29.5L26.5 25.5V19.2C26.5 14.1 23.2 10.5 18 10.5Z"
-                fill="#f5f5f7"
+                d="M18 10.4C12.7 10.4 9.2 14.1 9.2 19.3V25.7L14.4 29.8V22.9L12.3 20.8V17.7L16.4 19.2V30H19.6V19.2L23.7 17.7V20.8L21.6 22.9V29.8L26.8 25.7V19.3C26.8 14.1 23.3 10.4 18 10.4Z"
+                fill="url(#helmGrad)"
               />
             </svg>
           </div>
@@ -43,17 +63,18 @@
             <h1>BatState<span class="brand-accent">Wall</span></h1>
             <div class="brand-subrow">
               <p class="tagline">BatStateU Feedback Wall</p>
-              <span class="course-pill">IT 412 Platform Technologies</span>
             </div>
           </div>
         </div>
 
         <div class="header-meta">
           <div class="live-pill">
-            <span class="live-dot" aria-hidden="true"></span>
-            <span>Live Feed</span>
-            <span class="dot-sep" aria-hidden="true">&middot;</span>
-            <span>Total posts: <strong id="header-total-posts">0</strong></span>
+            <span class="live-status">
+              <span class="live-dot" aria-hidden="true"></span>
+              <span>LIVE FEED</span>
+            </span>
+            <span class="pill-divider" aria-hidden="true"></span>
+            <span class="live-count">Total posts: <strong id="header-total-posts">0</strong></span>
           </div>
         </div>
       </div>
@@ -119,6 +140,9 @@
               maxlength="280"
               placeholder="Write your feedback or shoutout for the BatStateU community..."
             ></textarea>
+            <div class="char-progress" aria-hidden="true">
+              <div id="char-progress-fill" class="char-progress-fill"></div>
+            </div>
           </div>
 
           <div class="form-footer">
@@ -140,12 +164,39 @@
       <!-- Community feedback wall card -->
       <section class="glass-card wall-card" aria-labelledby="wall-heading">
         <div class="wall-header">
-          <h2 id="wall-heading" class="card-title">Community Wall</h2>
+          <div class="wall-title-wrap">
+            <div class="wall-icon-badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <div class="wall-heading-group">
+              <h2 id="wall-heading" class="card-title">Community Wall</h2>
+              <p class="wall-subtitle">Latest messages from the BatStateU community</p>
+            </div>
+          </div>
           <span class="total-badge">Total posts: <strong id="total-posts">0</strong></span>
         </div>
 
-        <div id="posts-list" class="posts-list" aria-live="polite">
-          <div class="empty-state">Loading feedback...</div>
+        <div id="posts-list" class="posts-list" aria-live="polite" aria-label="Community feedback posts">
+          <div class="skeleton-card" aria-hidden="true">
+            <div class="skeleton-avatar"></div>
+            <div class="skeleton-lines">
+              <div class="skeleton-line short"></div>
+              <div class="skeleton-line long"></div>
+              <div class="skeleton-line medium"></div>
+            </div>
+          </div>
+          <div class="skeleton-card" aria-hidden="true">
+            <div class="skeleton-avatar"></div>
+            <div class="skeleton-lines">
+              <div class="skeleton-line short"></div>
+              <div class="skeleton-line long"></div>
+            </div>
+          </div>
         </div>
       </section>
     </main>
@@ -156,5 +207,14 @@
         Leading Innovations, Transforming Lives
       </p>
     </footer>
+
+    <!-- Floating Lottie confirmation toast displayed after a successful post -->
+    <div id="success-toast" class="success-toast" role="status" aria-live="polite" hidden>
+      <div id="lottie-success" class="toast-lottie" aria-hidden="true"></div>
+      <div class="toast-text">
+        <strong>Feedback posted!</strong>
+        <span>Your message is now live on the wall.</span>
+      </div>
+    </div>
   </body>
 </html>
