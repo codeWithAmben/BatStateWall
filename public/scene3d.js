@@ -4,11 +4,26 @@ import * as THREE from 'three';
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const hasFinePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 
+// Shared reaction boosts used by both background WebGL and foreground parallax dots
+const reactionState = {
+  typingBoost: 0,
+  successBoost: 0,
+  errorBoost: 0,
+  shockwaveProgress: 0,
+};
+
 // Expose a safe global API immediately so app.js can trigger reactions even if WebGL is unavailable
 const sceneApi = {
-  pulseTyping() {},
-  pulseSuccess() {},
-  pulseError() {},
+  pulseTyping() {
+    reactionState.typingBoost = Math.min(1, reactionState.typingBoost + 0.45);
+  },
+  pulseSuccess() {
+    reactionState.successBoost = 1;
+    reactionState.shockwaveProgress = 0.001;
+  },
+  pulseError() {
+    reactionState.errorBoost = 1;
+  },
   // Kept as a no-op so feed cards stay steady without 3D tilt jittering menus/inputs
   refreshCardEffects() {},
 };
@@ -39,6 +54,201 @@ function createEmberTexture() {
   const texture = new THREE.CanvasTexture(spriteCanvas);
   texture.needsUpdate = true;
   return texture;
+}
+
+/**
+ * Pre-renders soft glowing crimson/coral dot sprites for the foreground 2D overlay canvas.
+ */
+function createForegroundDotSprites() {
+  const palettes = [
+    ['rgba(255, 224, 224, 0.96)', 'rgba(239, 68, 68, 0.58)', 'rgba(239, 68, 68, 0)'],
+    ['rgba(255, 175, 175, 0.92)', 'rgba(211, 47, 47, 0.52)', 'rgba(211, 47, 47, 0)'],
+    ['rgba(254, 202, 202, 0.95)', 'rgba(229, 57, 53, 0.55)', 'rgba(229, 57, 53, 0)'],
+  ];
+
+  return palettes.map(([core, mid, edge]) => {
+    const sprite = document.createElement('canvas');
+    sprite.width = 40;
+    sprite.height = 40;
+    const sctx = sprite.getContext('2d');
+    if (sctx) {
+      const grad = sctx.createRadialGradient(20, 20, 1, 20, 20, 20);
+      grad.addColorStop(0, core);
+      grad.addColorStop(0.28, mid);
+      grad.addColorStop(1, edge);
+      sctx.fillStyle = grad;
+      sctx.fillRect(0, 0, 40, 40);
+    }
+    return sprite;
+  });
+}
+
+/**
+ * Renders subtle glowing crimson dots in front of the feed & sidebar cards (#fg-dots)
+ * with depth-scaled mouse & scroll parallax for multi-plane 3D immersion.
+ */
+function initForegroundDots() {
+  const fgCanvas = document.getElementById('fg-dots');
+  if (!fgCanvas) {
+    return;
+  }
+
+  const ctx = fgCanvas.getContext('2d');
+  if (!ctx) {
+    fgCanvas.style.display = 'none';
+    return;
+  }
+
+  const sprites = createForegroundDotSprites();
+  let width = window.innerWidth;
+  let height = Math.max(window.innerHeight, 1);
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resizeCanvas() {
+    width = window.innerWidth;
+    height = Math.max(window.innerHeight, 1);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    fgCanvas.width = Math.floor(width * dpr);
+    fgCanvas.height = Math.floor(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resizeCanvas();
+
+  const dotCount = width <= 768 ? 14 : 26;
+  const dots = Array.from({ length: dotCount }, (_, idx) => {
+    const z = 0.35 + Math.random() * 0.65; // Depth factor: closer dots are brighter and shift more
+    return {
+      x: Math.random() * width,
+      y: Math.random() * height,
+      z,
+      size: 6 + z * 9,
+      baseAlpha: 0.24 + z * 0.34,
+      vy: -(8 + z * 16),
+      vx: (Math.random() - 0.5) * 6,
+      phase: Math.random() * Math.PI * 2,
+      spriteIndex: idx % sprites.length,
+    };
+  });
+
+  let targetPointerX = 0;
+  let targetPointerY = 0;
+  let smoothPointerX = 0;
+  let smoothPointerY = 0;
+  let lastScrollY = window.scrollY;
+  let pendingScrollDelta = 0;
+
+  if (hasFinePointer && !prefersReducedMotion) {
+    window.addEventListener(
+      'pointermove',
+      (event) => {
+        targetPointerX = (event.clientX / Math.max(width, 1) - 0.5) * 2;
+        targetPointerY = (event.clientY / Math.max(height, 1) - 0.5) * 2;
+      },
+      { passive: true }
+    );
+  }
+
+  if (!prefersReducedMotion) {
+    window.addEventListener(
+      'scroll',
+      () => {
+        const currentY = window.scrollY;
+        pendingScrollDelta += currentY - lastScrollY;
+        lastScrollY = currentY;
+      },
+      { passive: true }
+    );
+  }
+
+  window.addEventListener('resize', () => {
+    const prevWidth = width;
+    const prevHeight = height;
+    resizeCanvas();
+    for (const dot of dots) {
+      if (prevWidth > 0 && prevHeight > 0) {
+        dot.x = (dot.x / prevWidth) * width;
+        dot.y = (dot.y / prevHeight) * height;
+      }
+    }
+  });
+
+  function drawDots(elapsedTime) {
+    ctx.clearRect(0, 0, width, height);
+
+    for (const dot of dots) {
+      const twinkle = 0.8 + 0.2 * Math.sin(elapsedTime * 1.8 + dot.phase);
+      const alpha = Math.min(0.85, dot.baseAlpha * twinkle + reactionState.successBoost * 0.16);
+      const drawX = dot.x + smoothPointerX * dot.z * 28;
+      const drawY = dot.y + smoothPointerY * dot.z * 18;
+      const half = dot.size * 0.5;
+
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(sprites[dot.spriteIndex], drawX - half, drawY - half, dot.size, dot.size);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if (prefersReducedMotion) {
+    drawDots(0);
+    return;
+  }
+
+  let fgFrameId = null;
+  let lastTime = performance.now();
+  let elapsedTime = 0;
+
+  function animateFg(now) {
+    fgFrameId = window.requestAnimationFrame(animateFg);
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    lastTime = now;
+    elapsedTime += dt;
+
+    // Smoothly damp pointer parallax and consume scroll parallax delta
+    const pointerLerp = 1 - Math.exp(-dt * 6);
+    smoothPointerX += (targetPointerX - smoothPointerX) * pointerLerp;
+    smoothPointerY += (targetPointerY - smoothPointerY) * pointerLerp;
+
+    const scrollStep = pendingScrollDelta;
+    pendingScrollDelta = 0;
+
+    const speedBoost = 1 + reactionState.typingBoost * 0.8 + reactionState.successBoost * 2.4;
+    const margin = 24;
+
+    for (const dot of dots) {
+      dot.x += (dot.vx + Math.sin(elapsedTime * 0.9 + dot.phase) * 4) * dt;
+      dot.y += dot.vy * speedBoost * dt - scrollStep * dot.z * 0.22;
+
+      if (dot.y < -margin) {
+        dot.y = height + margin;
+        dot.x = Math.random() * width;
+      } else if (dot.y > height + margin) {
+        dot.y = -margin;
+        dot.x = Math.random() * width;
+      }
+
+      if (dot.x < -margin) {
+        dot.x = width + margin;
+      } else if (dot.x > width + margin) {
+        dot.x = -margin;
+      }
+    }
+
+    drawDots(elapsedTime);
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (fgFrameId !== null) {
+        window.cancelAnimationFrame(fgFrameId);
+        fgFrameId = null;
+      }
+    } else if (fgFrameId === null) {
+      lastTime = performance.now();
+      fgFrameId = window.requestAnimationFrame(animateFg);
+    }
+  });
+
+  fgFrameId = window.requestAnimationFrame(animateFg);
 }
 
 /**
@@ -227,26 +437,8 @@ function initWebGLScene() {
   shockwaveRing.position.set(0, 0, -2.5);
   scene.add(shockwaveRing);
 
-  // Interactive reaction state (damped back to rest in the render loop)
   let pointerX = 0;
   let pointerY = 0;
-  let typingBoost = 0;
-  let successBoost = 0;
-  let errorBoost = 0;
-  let shockwaveProgress = 0;
-
-  sceneApi.pulseTyping = () => {
-    typingBoost = Math.min(1, typingBoost + 0.45);
-  };
-
-  sceneApi.pulseSuccess = () => {
-    successBoost = 1;
-    shockwaveProgress = 0.001;
-  };
-
-  sceneApi.pulseError = () => {
-    errorBoost = 1;
-  };
 
   if (hasFinePointer && !prefersReducedMotion) {
     window.addEventListener(
@@ -286,9 +478,9 @@ function initWebGLScene() {
     lastTime = now;
     elapsedTime += dt;
 
-    typingBoost *= Math.exp(-dt * 4);
-    successBoost *= Math.exp(-dt * 2.2);
-    errorBoost *= Math.exp(-dt * 4.5);
+    reactionState.typingBoost *= Math.exp(-dt * 4);
+    reactionState.successBoost *= Math.exp(-dt * 2.2);
+    reactionState.errorBoost *= Math.exp(-dt * 4.5);
 
     for (let i = 0; i < gridPosAttr.count; i += 1) {
       const x = gridPosAttr.getX(i);
@@ -300,7 +492,7 @@ function initWebGLScene() {
     }
     gridPosAttr.needsUpdate = true;
 
-    const emblemSpin = 0.24 + successBoost * 1.4;
+    const emblemSpin = 0.24 + reactionState.successBoost * 1.4;
     leftGroup.rotation.y += dt * emblemSpin;
     leftGroup.rotation.x = Math.sin(elapsedTime * 0.55) * 0.16;
     leftGroup.position.y = 0.6 + Math.sin(elapsedTime * 0.9) * 0.35;
@@ -311,7 +503,7 @@ function initWebGLScene() {
     rightGroup.position.y = -0.3 + Math.cos(elapsedTime * 0.85) * 0.35;
     rightRing.rotation.z -= dt * 0.42;
 
-    const speedMultiplier = 1 + typingBoost * 1.1 + successBoost * 3.2;
+    const speedMultiplier = 1 + reactionState.typingBoost * 1.1 + reactionState.successBoost * 3.2;
     const posArray = particleGeometry.attributes.position.array;
     for (let i = 0; i < particleCount; i += 1) {
       const i3 = i * 3;
@@ -325,21 +517,25 @@ function initWebGLScene() {
     }
     particleGeometry.attributes.position.needsUpdate = true;
 
-    if (shockwaveProgress > 0) {
-      shockwaveProgress += dt / 1.1;
-      if (shockwaveProgress >= 1) {
-        shockwaveProgress = 0;
+    if (reactionState.shockwaveProgress > 0) {
+      reactionState.shockwaveProgress += dt / 1.1;
+      if (reactionState.shockwaveProgress >= 1) {
+        reactionState.shockwaveProgress = 0;
         shockwaveMaterial.opacity = 0;
         shockwaveRing.scale.setScalar(1);
       } else {
-        const ringScale = 0.6 + shockwaveProgress * 10.9;
+        const ringScale = 0.6 + reactionState.shockwaveProgress * 10.9;
         shockwaveRing.scale.setScalar(ringScale);
-        shockwaveMaterial.opacity = (1 - shockwaveProgress) * 0.75;
+        shockwaveMaterial.opacity = (1 - reactionState.shockwaveProgress) * 0.75;
       }
     }
 
-    const errorFlicker = errorBoost > 0.02 ? (0.5 + 0.5 * Math.sin(elapsedTime * 36)) * errorBoost : 0;
-    centerLight.intensity = 6 + typingBoost * 10 + successBoost * 26 + errorFlicker * 18;
+    const errorFlicker =
+      reactionState.errorBoost > 0.02
+        ? (0.5 + 0.5 * Math.sin(elapsedTime * 36)) * reactionState.errorBoost
+        : 0;
+    centerLight.intensity =
+      6 + reactionState.typingBoost * 10 + reactionState.successBoost * 26 + errorFlicker * 18;
 
     const targetCamX = pointerX * 0.85;
     const targetCamY = 1.4 + pointerY * 0.55;
@@ -367,3 +563,4 @@ function initWebGLScene() {
 }
 
 initWebGLScene();
+initForegroundDots();
