@@ -121,7 +121,7 @@ app.get('/api/items/:id', async (req, res) => {
   }
 });
 
-// Start listening for incoming HTTP requests
-app.listen(PORT, () => {
+// Bind to 0.0.0.0 so Render's port scanner and local requests can both reach the server
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`BatStateWall server running on http://localhost:${PORT}`);
 });
