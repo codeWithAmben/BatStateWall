@@ -1,42 +1,68 @@
-// Maximum message length allowed by the backend API
+// Feed page size and live polling interval
 const MAX_MESSAGE_LENGTH = 280;
+const PAGE_SIZE = 10;
+const STATS_POLL_MS = 20000;
 
-// Cache references to DOM elements used throughout the script
-const siteHeader = document.querySelector('.site-header');
-const feedbackForm = document.getElementById('feedback-form');
-const formAuthGate = document.getElementById('form-auth-gate');
+// Header & Search elements
+const searchInput = document.getElementById('search-input');
+const searchClearBtn = document.getElementById('search-clear-btn');
+const openInfoBtn = document.getElementById('open-info-btn');
+
+// Header Auth & Profile Dropdown elements
+const authGuestActions = document.getElementById('auth-guest-actions');
+const authUserMenu = document.getElementById('auth-user-menu');
+const profileMenuBtn = document.getElementById('profile-menu-btn');
+const profileDropdown = document.getElementById('profile-dropdown');
+const userChipAvatar = document.getElementById('user-chip-avatar');
+const userChipName = document.getElementById('user-chip-name');
+const dropdownUserName = document.getElementById('dropdown-user-name');
+const dropdownUserEmail = document.getElementById('dropdown-user-email');
+const dropdownUserGoogle = document.getElementById('dropdown-user-google');
+const menuMyPostsBtn = document.getElementById('menu-my-posts');
+const openLoginBtn = document.getElementById('open-login-btn');
+const openRegisterBtn = document.getElementById('open-register-btn');
+const logoutBtn = document.getElementById('logout-btn');
+
+// Composer strip & modal elements
+const composerAvatar = document.getElementById('composer-avatar');
+const composerTrigger = document.getElementById('composer-trigger');
 const gateNotice = document.getElementById('gate-notice');
+const composerModal = document.getElementById('composer-modal');
+const closeComposerModalBtn = document.getElementById('close-composer-modal');
+const composerModalAvatar = document.getElementById('composer-modal-avatar');
 const postingAsName = document.getElementById('posting-as-name');
-const postingAsEmail = document.getElementById('posting-as-email');
-const nameInput = document.getElementById('name-input');
+const feedbackForm = document.getElementById('feedback-form');
 const messageInput = document.getElementById('message-input');
 const charCounter = document.getElementById('char-counter');
-const charProgressFill = document.getElementById('char-progress-fill');
 const submitBtn = document.getElementById('submit-btn');
 const submitBtnLabel = submitBtn.querySelector('.btn-label');
 const formError = document.getElementById('form-error');
-const totalPostsEl = document.getElementById('total-posts');
-const headerTotalPostsEl = document.getElementById('header-total-posts');
+
+// Feed toolbar, live banner, posts & pagination elements
+const sortSelect = document.getElementById('sort-select');
+const filterAllBtn = document.getElementById('filter-all');
+const filterMineBtn = document.getElementById('filter-mine');
+const newPostsWrap = document.getElementById('new-posts-wrap');
+const newPostsPill = document.getElementById('new-posts-pill');
+const newPostsCountEl = document.getElementById('new-posts-count');
+const feedErrorEl = document.getElementById('feed-error');
+const feedErrorText = document.getElementById('feed-error-text');
+const feedRetryBtn = document.getElementById('feed-retry-btn');
 const postsList = document.getElementById('posts-list');
-const successToast = document.getElementById('success-toast');
-const lottieContainer = document.getElementById('lottie-success');
-const toastTitleEl = document.getElementById('toast-title');
-const toastSubtitleEl = document.getElementById('toast-subtitle');
+const loadMoreWrap = document.getElementById('load-more-wrap');
+const loadMoreBtn = document.getElementById('load-more-btn');
 
-// Authentication UI elements
-const authGuestActions = document.getElementById('auth-guest-actions');
-const authUserChip = document.getElementById('auth-user-chip');
-const userChipAvatar = document.getElementById('user-chip-avatar');
-const userChipName = document.getElementById('user-chip-name');
-const userChipGoogle = document.getElementById('user-chip-google');
-const openLoginBtn = document.getElementById('open-login-btn');
-const openRegisterBtn = document.getElementById('open-register-btn');
-const gateLoginBtn = document.getElementById('gate-login-btn');
-const gateRegisterBtn = document.getElementById('gate-register-btn');
-const gateGoogleBtn = document.getElementById('gate-google-btn');
-const logoutBtn = document.getElementById('logout-btn');
+// Sidebar & Mobile Info stats elements
+const statTotalPosts = document.getElementById('stat-total-posts');
+const statTotalMembers = document.getElementById('stat-total-members');
+const statPostsToday = document.getElementById('stat-posts-today');
+const mobileStatPosts = document.getElementById('mobile-stat-posts');
+const mobileStatMembers = document.getElementById('mobile-stat-members');
+const mobileStatToday = document.getElementById('mobile-stat-today');
+const infoModal = document.getElementById('info-modal');
+const closeInfoModalBtn = document.getElementById('close-info-modal');
 
-// Modal & Auth Forms
+// Auth modal elements
 const authModal = document.getElementById('auth-modal');
 const closeAuthModalBtn = document.getElementById('close-auth-modal');
 const authModalTitle = document.getElementById('auth-modal-title');
@@ -55,17 +81,35 @@ const registerPasswordInput = document.getElementById('register-password');
 const registerSubmitBtn = document.getElementById('register-submit-btn');
 const authErrorEl = document.getElementById('auth-error');
 
+// Toast elements
+const successToast = document.getElementById('success-toast');
+const lottieContainer = document.getElementById('lottie-success');
+const toastTitleEl = document.getElementById('toast-title');
+const toastSubtitleEl = document.getElementById('toast-subtitle');
+
 // Client application state
 let currentUser = null;
 let googleEnabled = false;
 let authMode = 'login';
+let posts = [];
+let hasMorePosts = false;
+let knownLatestId = 0;
+let highlightedPostId = null;
 let lottieSuccessAnim = null;
 let toastHideTimer = null;
-let lastRenderedCount = null;
+let searchDebounceTimer = null;
+let pendingAfterLogin = null;
+const commentsCache = new Map();
+
+const feedState = {
+  sort: 'latest',
+  filter: 'all',
+  q: '',
+  offset: 0,
+};
 
 /**
- * Escapes HTML special characters in user-provided text to prevent XSS attacks
- * before inserting content into the DOM.
+ * Escapes HTML special characters in user-provided text to prevent XSS attacks.
  */
 function escapeHtml(text) {
   const str = String(text ?? '');
@@ -79,9 +123,6 @@ function escapeHtml(text) {
   return str.replace(/[&<>"']/g, (char) => replacements[char]);
 }
 
-/**
- * Validates that an avatar URL uses HTTPS before rendering an <img> tag.
- */
 function getSafeAvatarUrl(url) {
   if (typeof url === 'string' && url.startsWith('https://')) {
     return url;
@@ -89,9 +130,6 @@ function getSafeAvatarUrl(url) {
   return null;
 }
 
-/**
- * Extracts up to two uppercase initials from a poster's name for the avatar badge.
- */
 function getInitials(name) {
   const parts = String(name ?? '')
     .trim()
@@ -107,22 +145,24 @@ function getInitials(name) {
   return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
 
-/**
- * Returns a deterministic avatar color tone index (0, 1, or 2) from a poster's name.
- */
 function getAvatarTone(name) {
   const text = String(name ?? '');
   let sum = 0;
   for (let i = 0; i < text.length; i += 1) {
     sum += text.charCodeAt(i);
   }
-  return sum % 3;
+  return sum % 5;
 }
 
-/**
- * Formats an ISO timestamp from PostgreSQL into a readable local date and time.
- */
-function formatDate(isoString) {
+function buildAvatarHtml(name, avatarUrl) {
+  const safeAvatar = getSafeAvatarUrl(avatarUrl);
+  if (safeAvatar) {
+    return `<img src="${escapeHtml(safeAvatar)}" alt="" referrerpolicy="no-referrer" />`;
+  }
+  return escapeHtml(getInitials(name));
+}
+
+function formatFullDate(isoString) {
   const date = new Date(isoString);
   if (Number.isNaN(date.getTime())) {
     return 'Unknown date';
@@ -137,100 +177,50 @@ function formatDate(isoString) {
 }
 
 /**
- * Triggers a brief pop animation on a count badge when the post total changes.
+ * Formats timestamps into compact relative labels ("5m ago", "2h ago") with full date fallback.
  */
-function animateCountElement(el) {
-  if (!el) {
-    return;
+function formatRelativeTime(isoString) {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown date';
   }
-  el.classList.remove('count-bump');
-  void el.offsetWidth;
-  el.classList.add('count-bump');
+  const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diffSec < 45) {
+    return 'Just now';
+  }
+  if (diffSec < 3600) {
+    return `${Math.floor(diffSec / 60)}m ago`;
+  }
+  if (diffSec < 86400) {
+    return `${Math.floor(diffSec / 3600)}h ago`;
+  }
+  if (diffSec < 604800) {
+    return `${Math.floor(diffSec / 86400)}d ago`;
+  }
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
 
 /**
- * Updates the live character counter and progress track near the 280-char limit.
- */
-function updateCharCounter() {
-  const length = messageInput.value.length;
-  const nearLimit = length >= 240 && length < 270;
-  const atLimit = length >= 270;
-
-  charCounter.textContent = `${length} / ${MAX_MESSAGE_LENGTH}`;
-  charCounter.classList.toggle('near-limit', nearLimit);
-  charCounter.classList.toggle('at-limit', atLimit);
-
-  if (charProgressFill) {
-    const percent = Math.min(100, (length / MAX_MESSAGE_LENGTH) * 100);
-    charProgressFill.style.width = `${percent.toFixed(1)}%`;
-    charProgressFill.classList.toggle('near-limit', nearLimit);
-    charProgressFill.classList.toggle('at-limit', atLimit);
-  }
-}
-
-/**
- * Shows or clears an error message directly under the feedback form.
- */
-function showError(message) {
-  formError.textContent = message;
-  formError.hidden = false;
-}
-
-function clearError() {
-  formError.textContent = '';
-  formError.hidden = true;
-}
-
-/**
- * Shows or clears an error message inside the authentication modal or gate.
- */
-function showAuthError(message) {
-  authErrorEl.textContent = message;
-  authErrorEl.hidden = false;
-}
-
-function clearAuthError() {
-  authErrorEl.textContent = '';
-  authErrorEl.hidden = true;
-}
-
-function showGateNotice(message) {
-  if (!gateNotice) {
-    return;
-  }
-  gateNotice.textContent = message;
-  gateNotice.hidden = false;
-}
-
-function clearGateNotice() {
-  if (!gateNotice) {
-    return;
-  }
-  gateNotice.textContent = '';
-  gateNotice.hidden = true;
-}
-
-/**
- * Plays the Lottie checkmark animation (or a clean SVG fallback offline) inside #success-toast.
+ * Plays the Lottie checkmark animation (or inline SVG fallback) inside #success-toast.
  */
 function showSuccessToast(title = 'Feedback posted!', subtitle = 'Your message is now live on the wall.') {
   if (!successToast || !lottieContainer) {
     return;
   }
 
-  if (toastTitleEl) {
-    toastTitleEl.textContent = title;
-  }
-  if (toastSubtitleEl) {
-    toastSubtitleEl.textContent = subtitle;
-  }
+  toastTitleEl.textContent = title;
+  toastSubtitleEl.textContent = subtitle;
 
   if (toastHideTimer) {
     window.clearTimeout(toastHideTimer);
   }
 
   successToast.hidden = false;
-  // Force reflow so the CSS transition replays smoothly when visible
   void successToast.offsetWidth;
   successToast.classList.add('is-visible');
 
@@ -262,63 +252,135 @@ function showSuccessToast(title = 'Feedback posted!', subtitle = 'Your message i
       if (!successToast.classList.contains('is-visible')) {
         successToast.hidden = true;
       }
-    }, 240);
-  }, 3200);
+    }, 220);
+  }, 3000);
 }
 
-/**
- * Renders the avatar image (when HTTPS Google avatar is present) or initials fallback safely.
- */
-function buildAvatarHtml(name, avatarUrl) {
-  const safeAvatar = getSafeAvatarUrl(avatarUrl);
-  if (safeAvatar) {
-    return `<img src="${escapeHtml(safeAvatar)}" alt="" referrerpolicy="no-referrer" />`;
+function syncBodyScrollLock() {
+  const anyModalOpen =
+    (authModal && !authModal.hidden) ||
+    (composerModal && !composerModal.hidden) ||
+    (infoModal && !infoModal.hidden);
+  document.body.style.overflow = anyModalOpen ? 'hidden' : '';
+}
+
+function closeAllMenus() {
+  if (profileDropdown && !profileDropdown.hidden) {
+    profileDropdown.hidden = true;
+    profileMenuBtn?.setAttribute('aria-expanded', 'false');
   }
-  return escapeHtml(getInitials(name));
+  document.querySelectorAll('.post-dropdown:not([hidden])').forEach((menu) => {
+    menu.hidden = true;
+  });
+}
+
+function showGateNotice(message) {
+  gateNotice.textContent = message;
+  gateNotice.hidden = false;
+}
+
+function clearGateNotice() {
+  gateNotice.textContent = '';
+  gateNotice.hidden = true;
 }
 
 /**
- * Synchronizes header account controls and the feedback form gate with currentUser.
+ * Updates header controls, compact composer placeholder, and profile dropdown.
  */
 function updateAuthUI() {
   if (currentUser) {
+    const firstName = currentUser.name.trim().split(/\s+/)[0] || currentUser.name;
+    const tone = getAvatarTone(currentUser.name);
+
     authGuestActions.hidden = true;
-    authUserChip.hidden = false;
+    authUserMenu.hidden = false;
+    userChipAvatar.dataset.tone = String(tone);
     userChipAvatar.innerHTML = buildAvatarHtml(currentUser.name, currentUser.avatar_url);
-    userChipName.textContent = currentUser.name;
-    userChipGoogle.hidden = currentUser.auth_provider !== 'google';
+    userChipName.textContent = firstName;
+    dropdownUserName.textContent = currentUser.name;
+    dropdownUserEmail.textContent = currentUser.email;
+    dropdownUserGoogle.hidden = currentUser.auth_provider !== 'google';
 
-    formAuthGate.hidden = true;
-    feedbackForm.hidden = false;
-    clearGateNotice();
+    composerAvatar.dataset.tone = String(tone);
+    composerAvatar.innerHTML = buildAvatarHtml(currentUser.name, currentUser.avatar_url);
+    composerTrigger.textContent = `What's on your mind, ${firstName}?`;
+
+    composerModalAvatar.dataset.tone = String(tone);
+    composerModalAvatar.innerHTML = buildAvatarHtml(currentUser.name, currentUser.avatar_url);
     postingAsName.textContent = currentUser.name;
-    postingAsEmail.textContent = currentUser.email;
-
-    if (!nameInput.value.trim()) {
-      nameInput.value = currentUser.name;
-    }
+    clearGateNotice();
   } else {
     authGuestActions.hidden = false;
-    authUserChip.hidden = true;
-    userChipAvatar.innerHTML = '';
-    userChipName.textContent = '';
-    userChipGoogle.hidden = true;
+    authUserMenu.hidden = true;
+    profileDropdown.hidden = true;
+    profileMenuBtn.setAttribute('aria-expanded', 'false');
 
-    formAuthGate.hidden = false;
-    feedbackForm.hidden = true;
-    postingAsName.textContent = '';
-    postingAsEmail.textContent = '';
+    composerAvatar.dataset.tone = 'guest';
+    composerAvatar.textContent = '?';
+    composerTrigger.textContent = 'Log in to share your feedback...';
   }
-
-  window.BatStateScene?.refreshCardEffects();
 }
 
-/**
- * Switches the authentication modal between Log In and Create Account views.
- */
+/* ==================== Modals & Composer Controls ==================== */
+
+function updateComposerState() {
+  const length = messageInput.value.length;
+  const hasText = messageInput.value.trim().length > 0;
+
+  submitBtn.disabled = !hasText;
+
+  // Auto-grow textarea height smoothly without manual resize handle
+  messageInput.style.height = 'auto';
+  messageInput.style.height = `${Math.min(messageInput.scrollHeight, 260)}px`;
+
+  if (length >= 240) {
+    charCounter.hidden = false;
+    charCounter.textContent = `${length} / ${MAX_MESSAGE_LENGTH}`;
+    charCounter.classList.toggle('near-limit', length >= 240 && length < 270);
+    charCounter.classList.toggle('at-limit', length >= 270);
+  } else {
+    charCounter.hidden = true;
+    charCounter.classList.remove('near-limit', 'at-limit');
+  }
+}
+
+function openComposerModal() {
+  if (!currentUser) {
+    pendingAfterLogin = () => openComposerModal();
+    openAuthModal('login');
+    return;
+  }
+  closeAllMenus();
+  formError.textContent = '';
+  formError.hidden = true;
+  composerModal.hidden = false;
+  syncBodyScrollLock();
+  updateComposerState();
+  messageInput.focus();
+}
+
+function closeComposerModal() {
+  composerModal.hidden = true;
+  formError.textContent = '';
+  formError.hidden = true;
+  syncBodyScrollLock();
+}
+
+function openInfoModal() {
+  closeAllMenus();
+  infoModal.hidden = false;
+  syncBodyScrollLock();
+}
+
+function closeInfoModal() {
+  infoModal.hidden = true;
+  syncBodyScrollLock();
+}
+
 function setAuthMode(mode) {
   authMode = mode === 'register' ? 'register' : 'login';
-  clearAuthError();
+  authErrorEl.textContent = '';
+  authErrorEl.hidden = true;
 
   const isRegister = authMode === 'register';
   tabLogin.classList.toggle('is-active', !isRegister);
@@ -339,10 +401,10 @@ function setAuthMode(mode) {
 }
 
 function openAuthModal(mode = 'login') {
+  closeAllMenus();
   setAuthMode(mode);
   authModal.hidden = false;
-  document.body.style.overflow = 'hidden';
-
+  syncBodyScrollLock();
   if (mode === 'register') {
     registerNameInput.focus();
   } else {
@@ -352,32 +414,611 @@ function openAuthModal(mode = 'login') {
 
 function closeAuthModal() {
   authModal.hidden = true;
-  document.body.style.overflow = '';
-  clearAuthError();
+  authErrorEl.textContent = '';
+  authErrorEl.hidden = true;
+  syncBodyScrollLock();
 }
 
-/**
- * Checks whether Google OAuth is configured before navigating to /api/auth/google.
- */
 function handleGoogleClick(event) {
   if (!googleEnabled) {
     event.preventDefault();
     if (authModal.hidden) {
       openAuthModal('login');
     }
-    showAuthError(
-      'Google login is not configured on this server yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env or Render.'
-    );
+    authErrorEl.textContent =
+      'Google login is not configured on this server yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env or Render.';
+    authErrorEl.hidden = false;
   }
 }
 
-/**
- * Loads current user session, Google OAuth status, and handles OAuth callback query params.
- */
+/* ==================== Community Stats & Live Polling ==================== */
+
+function applyStats(stats) {
+  const totalPostsText = String(stats.totalPosts ?? 0);
+  const totalMembersText = String(stats.totalMembers ?? 0);
+  const postsTodayText = String(stats.postsToday ?? 0);
+
+  statTotalPosts.textContent = totalPostsText;
+  statTotalMembers.textContent = totalMembersText;
+  statPostsToday.textContent = postsTodayText;
+
+  mobileStatPosts.textContent = totalPostsText;
+  mobileStatMembers.textContent = totalMembersText;
+  mobileStatToday.textContent = postsTodayText;
+}
+
+async function loadStats() {
+  try {
+    const response = await fetch('/api/stats');
+    if (!response.ok) {
+      return null;
+    }
+    const stats = await response.json();
+    applyStats(stats);
+    return stats;
+  } catch (err) {
+    console.error('Failed to load community stats:', err);
+    return null;
+  }
+}
+
+async function checkForNewPosts() {
+  if (document.hidden || feedState.sort !== 'latest' || feedState.filter !== 'all' || feedState.q) {
+    return;
+  }
+  const stats = await loadStats();
+  if (stats && knownLatestId > 0 && stats.latestPostId > knownLatestId) {
+    const diff = stats.latestPostId - knownLatestId;
+    newPostsCountEl.textContent = String(diff);
+    newPostsWrap.hidden = false;
+  }
+}
+
+/* ==================== Feed Rendering & Interactions ==================== */
+
+function renderCommentHtml(comment) {
+  const author = escapeHtml(comment.author_name);
+  const avatarInner = buildAvatarHtml(comment.author_name, comment.avatar_url);
+  const tone = getAvatarTone(comment.author_name);
+  const relTime = escapeHtml(formatRelativeTime(comment.created_at));
+  const fullTime = escapeHtml(formatFullDate(comment.created_at));
+  const body = escapeHtml(comment.body);
+
+  return `
+    <div class="comment-item">
+      <div class="comment-avatar" data-tone="${tone}" aria-hidden="true">${avatarInner}</div>
+      <div class="comment-bubble">
+        <div class="comment-header">
+          <span class="comment-author">${author}</span>
+          <span class="comment-time" title="${fullTime}">${relTime}</span>
+        </div>
+        <div class="comment-body">${body}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPostCardHtml(item) {
+  const id = escapeHtml(item.id);
+  const safeName = escapeHtml(item.name);
+  const avatarInner = buildAvatarHtml(item.name, item.avatar_url);
+  const tone = getAvatarTone(item.name);
+  const relTime = escapeHtml(formatRelativeTime(item.created_at));
+  const fullTime = escapeHtml(formatFullDate(item.created_at));
+  const safeMessage = escapeHtml(item.message);
+  const likeCount = Number(item.like_count) || 0;
+  const commentCount = Number(item.comment_count) || 0;
+  const liked = Boolean(item.liked_by_me);
+  const isOwner = Boolean(item.is_owner);
+  const optimisticClass = item._optimistic ? 'is-optimistic' : '';
+  const highlightedClass = Number(item.id) === highlightedPostId ? 'is-highlighted' : '';
+
+  const googleBadgeHtml =
+    item.auth_provider === 'google' ? '<span class="google-badge">Gmail</span>' : '';
+
+  const summaryHtml =
+    likeCount > 0 || commentCount > 0
+      ? `
+      <div class="post-counts">
+        <span class="like-summary">
+          ${
+            likeCount > 0
+              ? `<span class="like-dot-badge" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                </span><span>${likeCount}</span>`
+              : ''
+          }
+        </span>
+        ${
+          commentCount > 0
+            ? `<button type="button" class="comments-toggle-link" data-action="toggle-comments" data-post-id="${id}">
+                View ${commentCount} ${commentCount === 1 ? 'comment' : 'comments'}
+              </button>`
+            : '<span></span>'
+        }
+      </div>
+    `
+      : '';
+
+  return `
+    <article class="fb-card post-card ${optimisticClass} ${highlightedClass}" data-post-id="${id}">
+      <div class="post-header">
+        <div class="post-author-row">
+          <div class="post-avatar" data-tone="${tone}" aria-hidden="true">${avatarInner}</div>
+          <div class="post-author-meta">
+            <div class="post-name-line">
+              <span class="post-author">${safeName}</span>
+              ${googleBadgeHtml}
+            </div>
+            <div class="post-submeta">
+              <time datetime="${escapeHtml(item.created_at)}" title="${fullTime}">${relTime}</time>
+              <span aria-hidden="true">&middot;</span>
+              <svg class="globe-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="post-menu-wrap">
+          <button
+            type="button"
+            class="btn-menu-dots"
+            data-action="toggle-menu"
+            data-post-id="${id}"
+            aria-label="More options for post by ${safeName}"
+            aria-haspopup="menu"
+          >
+            &hellip;
+          </button>
+          <div class="dropdown-menu post-dropdown" role="menu" hidden>
+            <div class="dropdown-item info-only">Post #${id}</div>
+            <button type="button" class="dropdown-item" data-action="copy-link" data-post-id="${id}" role="menuitem">
+              <span>Copy link</span>
+            </button>
+            <button type="button" class="dropdown-item" data-action="report-post" data-post-id="${id}" role="menuitem">
+              <span>Report post</span>
+            </button>
+            ${
+              isOwner
+                ? `<button type="button" class="dropdown-item danger" data-action="delete-post" data-post-id="${id}" role="menuitem">
+                    <span>Delete post</span>
+                  </button>`
+                : ''
+            }
+          </div>
+        </div>
+      </div>
+
+      <p class="post-message">${safeMessage}</p>
+
+      ${summaryHtml}
+
+      <div class="post-actions">
+        <button
+          type="button"
+          class="action-btn ${liked ? 'is-liked' : ''}"
+          data-action="like-post"
+          data-post-id="${id}"
+          aria-pressed="${liked}"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+          </svg>
+          <span>${liked ? 'Liked' : 'Like'}</span>
+        </button>
+
+        <button
+          type="button"
+          class="action-btn"
+          data-action="toggle-comments"
+          data-post-id="${id}"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          <span>Comment</span>
+        </button>
+
+        <button
+          type="button"
+          class="action-btn"
+          data-action="share-post"
+          data-post-id="${id}"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+          </svg>
+          <span>Share</span>
+        </button>
+      </div>
+
+      <div class="comments-section" data-comments-for="${id}" hidden>
+        <div class="comments-list"></div>
+        <form class="comment-form" data-post-id="${id}">
+          <input
+            type="text"
+            class="comment-input"
+            maxlength="280"
+            placeholder="${currentUser ? 'Write a comment...' : 'Log in to write a comment...'}"
+            aria-label="Write a comment"
+          />
+          <button type="submit" class="comment-send-btn">Post</button>
+        </form>
+      </div>
+    </article>
+  `;
+}
+
+function renderPosts() {
+  if (posts.length === 0) {
+    const isFiltered = Boolean(feedState.q || feedState.filter === 'mine');
+    postsList.innerHTML = `
+      <div class="fb-card empty-state">
+        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        <p>${
+          isFiltered
+            ? 'No posts match your current search or filter.'
+            : 'No posts yet. Be the first to post on BatStateWall!'
+        }</p>
+        ${
+          isFiltered
+            ? '<button type="button" id="reset-filters-btn" class="btn-ghost btn-sm">Reset filters</button>'
+            : ''
+        }
+      </div>
+    `;
+    loadMoreWrap.hidden = true;
+    return;
+  }
+
+  postsList.innerHTML = posts.map(renderPostCardHtml).join('');
+  loadMoreWrap.hidden = !hasMorePosts;
+
+  // Re-open any expanded comments from cache after re-render
+  posts.forEach((item) => {
+    const cached = commentsCache.get(item.id);
+    if (cached && cached.open) {
+      const section = postsList.querySelector(`.comments-section[data-comments-for="${item.id}"]`);
+      if (section) {
+        section.hidden = false;
+        const listEl = section.querySelector('.comments-list');
+        listEl.innerHTML =
+          cached.items.length > 0
+            ? cached.items.map(renderCommentHtml).join('')
+            : '<div class="comments-status">No comments yet. Start the conversation!</div>';
+      }
+    }
+  });
+}
+
+async function fetchFeed({ append = false } = {}) {
+  feedErrorEl.hidden = true;
+  if (!append) {
+    feedState.offset = 0;
+  }
+
+  const params = new URLSearchParams({
+    sort: feedState.sort,
+    filter: feedState.filter,
+    limit: String(PAGE_SIZE + 1),
+    offset: String(feedState.offset),
+  });
+  if (feedState.q) {
+    params.set('q', feedState.q);
+  }
+
+  try {
+    const response = await fetch(`/api/items?${params.toString()}`);
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || !Array.isArray(data)) {
+      const errMsg = (data && data.error) || 'Could not load posts.';
+      feedErrorText.textContent = errMsg;
+      feedErrorEl.hidden = false;
+      if (!append && posts.length === 0) {
+        postsList.innerHTML = '';
+      }
+      return;
+    }
+
+    hasMorePosts = data.length > PAGE_SIZE;
+    const pageItems = hasMorePosts ? data.slice(0, PAGE_SIZE) : data;
+
+    if (append) {
+      const existingIds = new Set(posts.map((p) => p.id));
+      posts = posts.concat(pageItems.filter((p) => !existingIds.has(p.id)));
+    } else {
+      posts = pageItems;
+      newPostsWrap.hidden = true;
+
+      // Handle deep-linked post (?post=123) if it wasn't on page 1
+      if (highlightedPostId && !posts.some((p) => p.id === highlightedPostId)) {
+        const singleRes = await fetch(`/api/items/${highlightedPostId}`);
+        if (singleRes.ok) {
+          const singlePost = await singleRes.json();
+          posts = [singlePost, ...posts];
+        }
+      }
+    }
+
+    const maxId = posts.reduce((max, item) => (item.id > max ? item.id : max), 0);
+    if (maxId > knownLatestId) {
+      knownLatestId = maxId;
+    }
+
+    renderPosts();
+
+    if (!append && highlightedPostId) {
+      const target = postsList.querySelector(`.post-card[data-post-id="${highlightedPostId}"]`);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      window.setTimeout(() => {
+        highlightedPostId = null;
+        document.querySelectorAll('.post-card.is-highlighted').forEach((el) => {
+          el.classList.remove('is-highlighted');
+        });
+      }, 2400);
+    }
+  } catch (err) {
+    console.error('Failed to load feed:', err);
+    feedErrorText.textContent = 'Network error while loading posts.';
+    feedErrorEl.hidden = false;
+    if (!append && posts.length === 0) {
+      postsList.innerHTML = '';
+    }
+  } finally {
+    loadMoreBtn.disabled = false;
+    loadMoreBtn.textContent = 'Load more posts';
+  }
+}
+
+/* ==================== Post Action Handlers ==================== */
+
+async function handleToggleLike(postId, buttonEl) {
+  if (!currentUser) {
+    openAuthModal('login');
+    return;
+  }
+  const post = posts.find((p) => p.id === postId);
+  if (!post || post._optimistic) {
+    return;
+  }
+
+  // Optimistic toggle with scale pop
+  const prevLiked = Boolean(post.liked_by_me);
+  const prevCount = Number(post.like_count) || 0;
+  post.liked_by_me = !prevLiked;
+  post.like_count = Math.max(0, prevCount + (post.liked_by_me ? 1 : -1));
+  renderPosts();
+
+  const updatedBtn = postsList.querySelector(`.action-btn[data-action="like-post"][data-post-id="${postId}"]`);
+  if (updatedBtn && post.liked_by_me) {
+    updatedBtn.classList.add('like-pop');
+  }
+
+  try {
+    const response = await fetch(`/api/items/${postId}/like`, { method: 'POST' });
+    if (response.status === 401) {
+      currentUser = null;
+      updateAuthUI();
+      openAuthModal('login');
+      return;
+    }
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data) {
+      throw new Error('Like failed');
+    }
+    post.liked_by_me = Boolean(data.liked);
+    post.like_count = Number(data.like_count) || 0;
+    renderPosts();
+  } catch (err) {
+    console.error('Like error:', err);
+    post.liked_by_me = prevLiked;
+    post.like_count = prevCount;
+    renderPosts();
+    if (buttonEl) {
+      showSuccessToast('Could not update like', 'Please try again.');
+    }
+  }
+}
+
+async function loadPostComments(postId, sectionEl) {
+  const listEl = sectionEl.querySelector('.comments-list');
+  listEl.innerHTML = '<div class="comments-status">Loading comments...</div>';
+
+  try {
+    const response = await fetch(`/api/items/${postId}/comments`);
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(data)) {
+      listEl.innerHTML = '<div class="comments-status">Could not load comments.</div>';
+      return;
+    }
+    commentsCache.set(postId, { open: true, items: data });
+    listEl.innerHTML =
+      data.length > 0
+        ? data.map(renderCommentHtml).join('')
+        : '<div class="comments-status">No comments yet. Start the conversation!</div>';
+  } catch (err) {
+    console.error('Comments fetch error:', err);
+    listEl.innerHTML = '<div class="comments-status">Network error loading comments.</div>';
+  }
+}
+
+async function handleToggleComments(postId) {
+  const section = postsList.querySelector(`.comments-section[data-comments-for="${postId}"]`);
+  if (!section) {
+    return;
+  }
+
+  const willOpen = section.hidden;
+  section.hidden = !willOpen;
+  const cached = commentsCache.get(postId) || { open: false, items: [] };
+  cached.open = willOpen;
+  commentsCache.set(postId, cached);
+
+  if (willOpen) {
+    await loadPostComments(postId, section);
+    const input = section.querySelector('.comment-input');
+    input?.focus();
+  }
+}
+
+async function handleSubmitComment(postId, formEl) {
+  if (!currentUser) {
+    openAuthModal('login');
+    return;
+  }
+  const input = formEl.querySelector('.comment-input');
+  const sendBtn = formEl.querySelector('.comment-send-btn');
+  const body = input.value.trim();
+  if (!body) {
+    return;
+  }
+
+  sendBtn.disabled = true;
+  try {
+    const response = await fetch(`/api/items/${postId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+    });
+
+    if (response.status === 401) {
+      currentUser = null;
+      updateAuthUI();
+      openAuthModal('login');
+      return;
+    }
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data) {
+      showSuccessToast('Comment not posted', (data && data.error) || 'Please try again.');
+      return;
+    }
+
+    input.value = '';
+    const cached = commentsCache.get(postId) || { open: true, items: [] };
+    cached.open = true;
+    cached.items.push(data);
+    commentsCache.set(postId, cached);
+
+    const post = posts.find((p) => p.id === postId);
+    if (post) {
+      post.comment_count = (Number(post.comment_count) || 0) + 1;
+    }
+    renderPosts();
+  } catch (err) {
+    console.error('Failed to post comment:', err);
+    showSuccessToast('Network error', 'Could not post comment.');
+  } finally {
+    sendBtn.disabled = false;
+  }
+}
+
+async function handleSharePost(postId, useNativeShare = true) {
+  const url = `${window.location.origin}/?post=${postId}`;
+  if (useNativeShare && navigator.share) {
+    try {
+      await navigator.share({ title: 'BatStateWall Post', url });
+      return;
+    } catch {
+      // User cancelled or native share unsupported; fall back to clipboard
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(url);
+    showSuccessToast('Link copied!', 'Post link copied to your clipboard.');
+  } catch {
+    showSuccessToast('Share link ready', url);
+  }
+}
+
+async function handleReportPost(postId) {
+  closeAllMenus();
+  if (!currentUser) {
+    openAuthModal('login');
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/items/${postId}/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'Reported from feed menu' }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      currentUser = null;
+      updateAuthUI();
+      openAuthModal('login');
+      return;
+    }
+    if (!response.ok) {
+      showSuccessToast('Report failed', data.error || 'Could not submit report.');
+      return;
+    }
+    showSuccessToast('Report submitted', 'Thank you for helping keep BatStateWall respectful.');
+  } catch (err) {
+    console.error('Report error:', err);
+    showSuccessToast('Network error', 'Could not submit report.');
+  }
+}
+
+async function handleDeletePost(postId, btnEl) {
+  // Inline confirmation step inside the menu before deleting
+  if (btnEl.dataset.confirmed !== '1') {
+    btnEl.dataset.confirmed = '1';
+    btnEl.querySelector('span').textContent = 'Confirm delete?';
+    return;
+  }
+
+  closeAllMenus();
+  try {
+    const response = await fetch(`/api/items/${postId}`, { method: 'DELETE' });
+    if (response.status === 401) {
+      currentUser = null;
+      updateAuthUI();
+      openAuthModal('login');
+      return;
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showSuccessToast('Delete failed', data.error || 'Could not delete post.');
+      return;
+    }
+
+    posts = posts.filter((p) => p.id !== postId);
+    commentsCache.delete(postId);
+    renderPosts();
+    loadStats();
+    showSuccessToast('Post deleted', 'Your post has been removed.');
+  } catch (err) {
+    console.error('Delete error:', err);
+    showSuccessToast('Network error', 'Could not delete post.');
+  }
+}
+
+/* ==================== Auth & Post Submission Handlers ==================== */
+
 async function loadAuthState() {
   const params = new URLSearchParams(window.location.search);
   const authResult = params.get('auth');
   const authError = params.get('auth_error');
+  const postParam = params.get('post');
+  if (postParam && /^\d+$/.test(postParam)) {
+    highlightedPostId = Number(postParam);
+  }
 
   try {
     const [meRes, cfgRes] = await Promise.all([fetch('/api/auth/me'), fetch('/api/auth/config')]);
@@ -387,7 +1028,7 @@ async function loadAuthState() {
     currentUser = meData && meData.user ? meData.user : null;
     googleEnabled = Boolean(cfgData && cfgData.googleEnabled);
   } catch (err) {
-    console.error('Failed to load authentication state:', err);
+    console.error('Failed to load auth state:', err);
     currentUser = null;
   }
 
@@ -411,12 +1052,9 @@ async function loadAuthState() {
   }
 }
 
-/**
- * Handles email + password login form submission.
- */
 async function handleLoginSubmit(event) {
   event.preventDefault();
-  clearAuthError();
+  authErrorEl.hidden = true;
 
   const btnLabel = loginSubmitBtn.querySelector('.btn-label');
   loginSubmitBtn.disabled = true;
@@ -436,7 +1074,8 @@ async function handleLoginSubmit(event) {
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      showAuthError(data.error || 'Could not log in. Please try again.');
+      authErrorEl.textContent = data.error || 'Could not log in. Please try again.';
+      authErrorEl.hidden = false;
       window.BatStateScene?.pulseError();
       return;
     }
@@ -447,9 +1086,18 @@ async function handleLoginSubmit(event) {
     updateAuthUI();
     window.BatStateScene?.pulseSuccess();
     showSuccessToast('Welcome back!', `Signed in as ${currentUser.name}`);
+
+    await Promise.all([fetchFeed(), loadStats()]);
+
+    if (typeof pendingAfterLogin === 'function') {
+      const nextAction = pendingAfterLogin;
+      pendingAfterLogin = null;
+      nextAction();
+    }
   } catch (err) {
     console.error('Login failed:', err);
-    showAuthError('Network error while logging in. Please try again.');
+    authErrorEl.textContent = 'Network error while logging in. Please try again.';
+    authErrorEl.hidden = false;
     window.BatStateScene?.pulseError();
   } finally {
     loginSubmitBtn.disabled = false;
@@ -459,12 +1107,9 @@ async function handleLoginSubmit(event) {
   }
 }
 
-/**
- * Handles new account registration form submission.
- */
 async function handleRegisterSubmit(event) {
   event.preventDefault();
-  clearAuthError();
+  authErrorEl.hidden = true;
 
   const btnLabel = registerSubmitBtn.querySelector('.btn-label');
   registerSubmitBtn.disabled = true;
@@ -485,7 +1130,8 @@ async function handleRegisterSubmit(event) {
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      showAuthError(data.error || 'Could not create account. Please try again.');
+      authErrorEl.textContent = data.error || 'Could not create account. Please try again.';
+      authErrorEl.hidden = false;
       window.BatStateScene?.pulseError();
       return;
     }
@@ -496,9 +1142,18 @@ async function handleRegisterSubmit(event) {
     updateAuthUI();
     window.BatStateScene?.pulseSuccess();
     showSuccessToast('Account created!', `Welcome to BatStateWall, ${currentUser.name}`);
+
+    await Promise.all([fetchFeed(), loadStats()]);
+
+    if (typeof pendingAfterLogin === 'function') {
+      const nextAction = pendingAfterLogin;
+      pendingAfterLogin = null;
+      nextAction();
+    }
   } catch (err) {
     console.error('Registration failed:', err);
-    showAuthError('Network error while creating account. Please try again.');
+    authErrorEl.textContent = 'Network error while creating account. Please try again.';
+    authErrorEl.hidden = false;
     window.BatStateScene?.pulseError();
   } finally {
     registerSubmitBtn.disabled = false;
@@ -508,205 +1163,178 @@ async function handleRegisterSubmit(event) {
   }
 }
 
-/**
- * Logs out the current user and refreshes the form gate.
- */
 async function handleLogout() {
+  closeAllMenus();
   try {
     await fetch('/api/auth/logout', { method: 'POST' });
   } catch (err) {
     console.error('Logout failed:', err);
   }
   currentUser = null;
-  nameInput.value = '';
-  clearError();
+  if (feedState.filter === 'mine') {
+    feedState.filter = 'all';
+    filterAllBtn.classList.add('is-active');
+    filterMineBtn.classList.remove('is-active');
+  }
   updateAuthUI();
+  fetchFeed();
 }
 
 /**
- * Renders the list of feedback posts and updates both Total posts counters.
- */
-function renderPosts(items) {
-  const countText = String(items.length);
-  const countChanged = lastRenderedCount !== null && lastRenderedCount !== items.length;
-  lastRenderedCount = items.length;
-
-  totalPostsEl.textContent = countText;
-  if (headerTotalPostsEl) {
-    headerTotalPostsEl.textContent = countText;
-  }
-  if (countChanged) {
-    animateCountElement(totalPostsEl);
-    animateCountElement(headerTotalPostsEl);
-  }
-
-  if (items.length === 0) {
-    postsList.innerHTML = `
-      <div class="empty-state">
-        <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-        <p>No feedback posted yet. Be the first to leave a message!</p>
-      </div>
-    `;
-    return;
-  }
-
-  const cardsHtml = items
-    .map((item, index) => {
-      const safeId = escapeHtml(item.id);
-      const safeName = escapeHtml(item.name);
-      const avatarInner = buildAvatarHtml(item.name, item.avatar_url);
-      const tone = getAvatarTone(item.name);
-      const googleBadgeHtml =
-        item.auth_provider === 'google' ? '<span class="post-google-tag">Gmail</span>' : '';
-      const safeMessage = escapeHtml(item.message);
-      const formattedDate = escapeHtml(formatDate(item.created_at));
-      const safeIsoDate = escapeHtml(item.created_at);
-      const delayMs = Math.min(index, 5) * 45;
-
-      return `
-        <article class="post-card" style="animation-delay: ${delayMs}ms">
-          <div class="post-avatar" data-tone="${tone}" aria-hidden="true">${avatarInner}</div>
-          <div class="post-body">
-            <div class="post-meta">
-              <div class="post-identity">
-                <span class="post-author">${safeName}</span>
-                ${googleBadgeHtml}
-                <span class="post-id">#${safeId}</span>
-              </div>
-              <time class="post-date" datetime="${safeIsoDate}">
-                <svg class="date-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12 6 12 12 16 14" />
-                </svg>
-                <span>${formattedDate}</span>
-              </time>
-            </div>
-            <p class="post-message">${safeMessage}</p>
-          </div>
-        </article>
-      `;
-    })
-    .join('');
-
-  postsList.innerHTML = cardsHtml;
-  window.BatStateScene?.refreshCardEffects();
-}
-
-/**
- * Fetches all feedback posts from GET /api/items and updates the page.
- */
-async function loadPosts() {
-  try {
-    const response = await fetch('/api/items');
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok || !Array.isArray(data)) {
-      const errorMsg = (data && data.error) || 'Could not load feedback messages.';
-      postsList.innerHTML = `<div class="empty-state"><p>${escapeHtml(errorMsg)}</p></div>`;
-      return;
-    }
-
-    renderPosts(data);
-  } catch (err) {
-    console.error('Failed to fetch posts:', err);
-    postsList.innerHTML =
-      '<div class="empty-state"><p>Unable to connect to the server. Please refresh the page.</p></div>';
-  }
-}
-
-/**
- * Handles form submission by sending a POST /api/items request.
+ * Optimistically prepends new post and reconciles with POST /api/items.
  */
 async function handleFormSubmit(event) {
   event.preventDefault();
-  clearError();
+  if (!currentUser) {
+    closeComposerModal();
+    openAuthModal('login');
+    return;
+  }
 
-  const payload = {
-    name: nameInput.value,
-    message: messageInput.value,
-  };
+  const trimmedMessage = messageInput.value.trim();
+  if (!trimmedMessage) {
+    formError.textContent = 'Message is required.';
+    formError.hidden = false;
+    return;
+  }
 
-  // Prevent duplicate submissions while waiting for the server response
+  formError.hidden = true;
   submitBtn.disabled = true;
   if (submitBtnLabel) {
     submitBtnLabel.textContent = 'Posting...';
   }
 
+  const canPrependOptimistically =
+    feedState.sort === 'latest' && !feedState.q && (feedState.filter === 'all' || feedState.filter === 'mine');
+  const tempId = -Date.now();
+  const optimisticPost = {
+    id: tempId,
+    name: currentUser.name,
+    message: trimmedMessage,
+    user_id: currentUser.id,
+    avatar_url: currentUser.avatar_url,
+    auth_provider: currentUser.auth_provider,
+    created_at: new Date().toISOString(),
+    like_count: 0,
+    comment_count: 0,
+    liked_by_me: false,
+    is_owner: true,
+    _optimistic: true,
+  };
+
+  if (canPrependOptimistically) {
+    posts = [optimisticPost, ...posts];
+    renderPosts();
+  }
+
+  messageInput.value = '';
+  updateComposerState();
+  closeComposerModal();
+  window.BatStateScene?.pulseSuccess();
+  showSuccessToast('Feedback posted!', 'Your message is now live on the wall.');
+
   try {
     const response = await fetch('/api/items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ message: trimmedMessage }),
     });
 
     const data = await response.json().catch(() => ({}));
 
     if (response.status === 401) {
+      posts = posts.filter((p) => p.id !== tempId);
+      renderPosts();
       currentUser = null;
       updateAuthUI();
-      showGateNotice(data.error || 'Please log in to post feedback.');
       openAuthModal('login');
       return;
     }
 
     if (!response.ok) {
-      showError(data.error || 'Could not submit your feedback. Please try again.');
+      posts = posts.filter((p) => p.id !== tempId);
+      renderPosts();
+      openComposerModal();
+      messageInput.value = trimmedMessage;
+      updateComposerState();
+      formError.textContent = data.error || 'Could not submit your post.';
+      formError.hidden = false;
       window.BatStateScene?.pulseError();
       return;
     }
 
-    // Reset message while keeping the signed-in user's name pre-filled
-    messageInput.value = '';
-    if (currentUser && !nameInput.value.trim()) {
-      nameInput.value = currentUser.name;
+    if (canPrependOptimistically) {
+      posts = posts.map((p) => (p.id === tempId ? data : p));
+      if (data.id > knownLatestId) {
+        knownLatestId = data.id;
+      }
+      renderPosts();
+    } else {
+      await fetchFeed();
     }
-    updateCharCounter();
-    clearError();
-    window.BatStateScene?.pulseSuccess();
-    showSuccessToast('Feedback posted!', 'Your message is now live on the wall.');
-    await loadPosts();
+    loadStats();
   } catch (err) {
-    console.error('Failed to submit feedback:', err);
-    showError('Network error while posting feedback. Please try again.');
+    console.error('Failed to submit post:', err);
+    posts = posts.filter((p) => p.id !== tempId);
+    renderPosts();
+    openComposerModal();
+    messageInput.value = trimmedMessage;
+    updateComposerState();
+    formError.textContent = 'Network error while posting. Please try again.';
+    formError.hidden = false;
     window.BatStateScene?.pulseError();
   } finally {
-    submitBtn.disabled = false;
+    submitBtn.disabled = !messageInput.value.trim();
     if (submitBtnLabel) {
-      submitBtnLabel.textContent = 'Post Feedback';
+      submitBtnLabel.textContent = 'Post';
     }
   }
 }
 
-// Add elevated glass depth to the sticky header once the page scrolls
-if (siteHeader) {
-  window.addEventListener(
-    'scroll',
-    () => {
-      siteHeader.classList.toggle('is-scrolled', window.scrollY > 12);
-    },
-    { passive: true }
-  );
-}
+/* ==================== Event Wiring ==================== */
 
-// Wire up UI event listeners
+// Header & Profile Dropdown
 openLoginBtn?.addEventListener('click', () => openAuthModal('login'));
 openRegisterBtn?.addEventListener('click', () => openAuthModal('register'));
-gateLoginBtn?.addEventListener('click', () => openAuthModal('login'));
-gateRegisterBtn?.addEventListener('click', () => openAuthModal('register'));
-gateGoogleBtn?.addEventListener('click', handleGoogleClick);
 modalGoogleBtn?.addEventListener('click', handleGoogleClick);
 logoutBtn?.addEventListener('click', handleLogout);
+
+profileMenuBtn?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const willOpen = profileDropdown.hidden;
+  closeAllMenus();
+  profileDropdown.hidden = !willOpen;
+  profileMenuBtn.setAttribute('aria-expanded', String(willOpen));
+});
+
+menuMyPostsBtn?.addEventListener('click', () => {
+  closeAllMenus();
+  feedState.filter = 'mine';
+  filterMineBtn.classList.add('is-active');
+  filterAllBtn.classList.remove('is-active');
+  fetchFeed();
+});
+
+// Composer & Modals
+composerTrigger?.addEventListener('click', openComposerModal);
+closeComposerModalBtn?.addEventListener('click', closeComposerModal);
+composerModal?.addEventListener('click', (event) => {
+  if (event.target instanceof HTMLElement && event.target.dataset.closeComposer === 'true') {
+    closeComposerModal();
+  }
+});
+
+openInfoBtn?.addEventListener('click', openInfoModal);
+closeInfoModalBtn?.addEventListener('click', closeInfoModal);
+infoModal?.addEventListener('click', (event) => {
+  if (event.target instanceof HTMLElement && event.target.dataset.closeInfo === 'true') {
+    closeInfoModal();
+  }
+});
 
 closeAuthModalBtn?.addEventListener('click', closeAuthModal);
 authModal?.addEventListener('click', (event) => {
   if (event.target instanceof HTMLElement && event.target.dataset.closeModal === 'true') {
-    closeAuthModal();
-  }
-});
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && authModal && !authModal.hidden) {
     closeAuthModal();
   }
 });
@@ -730,19 +1358,187 @@ document.querySelectorAll('.btn-toggle-pass').forEach((btn) => {
 
 loginForm?.addEventListener('submit', handleLoginSubmit);
 registerForm?.addEventListener('submit', handleRegisterSubmit);
+feedbackForm?.addEventListener('submit', handleFormSubmit);
 
-nameInput.addEventListener('input', () => {
+messageInput?.addEventListener('input', () => {
+  updateComposerState();
   window.BatStateScene?.pulseTyping();
 });
 
-messageInput.addEventListener('input', () => {
-  updateCharCounter();
-  window.BatStateScene?.pulseTyping();
+// Search, Sort, Filter, Load More & New Posts Pill
+searchInput?.addEventListener('input', () => {
+  const val = searchInput.value.trim();
+  searchClearBtn.hidden = val.length === 0;
+  window.clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = window.setTimeout(() => {
+    feedState.q = val;
+    fetchFeed();
+  }, 260);
 });
 
-feedbackForm.addEventListener('submit', handleFormSubmit);
+searchClearBtn?.addEventListener('click', () => {
+  searchInput.value = '';
+  searchClearBtn.hidden = true;
+  feedState.q = '';
+  fetchFeed();
+  searchInput.focus();
+});
 
-// Initialize counter, authentication state, and community posts on page load
-updateCharCounter();
-loadAuthState();
-loadPosts();
+sortSelect?.addEventListener('change', () => {
+  feedState.sort = sortSelect.value === 'popular' ? 'popular' : 'latest';
+  fetchFeed();
+});
+
+filterAllBtn?.addEventListener('click', () => {
+  if (feedState.filter === 'all') {
+    return;
+  }
+  feedState.filter = 'all';
+  filterAllBtn.classList.add('is-active');
+  filterMineBtn.classList.remove('is-active');
+  fetchFeed();
+});
+
+filterMineBtn?.addEventListener('click', () => {
+  if (!currentUser) {
+    pendingAfterLogin = () => {
+      feedState.filter = 'mine';
+      filterMineBtn.classList.add('is-active');
+      filterAllBtn.classList.remove('is-active');
+      fetchFeed();
+    };
+    openAuthModal('login');
+    return;
+  }
+  if (feedState.filter === 'mine') {
+    return;
+  }
+  feedState.filter = 'mine';
+  filterMineBtn.classList.add('is-active');
+  filterAllBtn.classList.remove('is-active');
+  fetchFeed();
+});
+
+newPostsPill?.addEventListener('click', () => {
+  newPostsWrap.hidden = true;
+  fetchFeed();
+  loadStats();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+feedRetryBtn?.addEventListener('click', () => {
+  fetchFeed();
+  loadStats();
+});
+
+loadMoreBtn?.addEventListener('click', () => {
+  loadMoreBtn.disabled = true;
+  loadMoreBtn.textContent = 'Loading...';
+  feedState.offset += PAGE_SIZE;
+  fetchFeed({ append: true });
+});
+
+// Event delegation on posts feed (Like, Comments, Share, Overflow Menu, Reset Filters)
+postsList?.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  if (target.closest('#reset-filters-btn')) {
+    searchInput.value = '';
+    searchClearBtn.hidden = true;
+    feedState.q = '';
+    feedState.filter = 'all';
+    filterAllBtn.classList.add('is-active');
+    filterMineBtn.classList.remove('is-active');
+    fetchFeed();
+    return;
+  }
+
+  const actionEl = target.closest('[data-action]');
+  if (!actionEl) {
+    return;
+  }
+
+  const action = actionEl.dataset.action;
+  const postId = Number(actionEl.dataset.postId);
+
+  if (action === 'toggle-menu') {
+    event.stopPropagation();
+    const menu = actionEl.nextElementSibling;
+    const willOpen = menu && menu.hidden;
+    closeAllMenus();
+    if (menu) {
+      menu.hidden = !willOpen;
+      const deleteBtn = menu.querySelector('[data-action="delete-post"]');
+      if (deleteBtn) {
+        delete deleteBtn.dataset.confirmed;
+        deleteBtn.querySelector('span').textContent = 'Delete post';
+      }
+    }
+    return;
+  }
+
+  if (!Number.isFinite(postId)) {
+    return;
+  }
+
+  if (action === 'like-post') {
+    handleToggleLike(postId, actionEl);
+  } else if (action === 'toggle-comments') {
+    handleToggleComments(postId);
+  } else if (action === 'share-post') {
+    handleSharePost(postId, true);
+  } else if (action === 'copy-link') {
+    closeAllMenus();
+    handleSharePost(postId, false);
+  } else if (action === 'report-post') {
+    handleReportPost(postId);
+  } else if (action === 'delete-post') {
+    handleDeletePost(postId, actionEl);
+  }
+});
+
+postsList?.addEventListener('submit', (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement) || !form.classList.contains('comment-form')) {
+    return;
+  }
+  event.preventDefault();
+  const postId = Number(form.dataset.postId);
+  if (Number.isFinite(postId)) {
+    handleSubmitComment(postId, form);
+  }
+});
+
+// Close open dropdowns / modals cleanly on outside click or Escape
+document.addEventListener('click', (event) => {
+  const target = event.target;
+  if (target instanceof Element && !target.closest('.profile-menu-wrap') && !target.closest('.post-menu-wrap')) {
+    closeAllMenus();
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') {
+    return;
+  }
+  closeAllMenus();
+  if (!composerModal.hidden) {
+    closeComposerModal();
+  }
+  if (!infoModal.hidden) {
+    closeInfoModal();
+  }
+  if (!authModal.hidden) {
+    closeAuthModal();
+  }
+});
+
+// Initialize page state & start background live-feed poll
+(async function init() {
+  await loadAuthState();
+  await Promise.all([fetchFeed(), loadStats()]);
+  window.setInterval(checkForNewPosts, STATS_POLL_MS);
+})();

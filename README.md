@@ -143,7 +143,7 @@ Base URL (local): `http://localhost:3000`
 ### 1. Get All Feedback Items
 
 - **Endpoint:** `GET /api/items`
-- **Description:** Returns all feedback items ordered newest first (`created_at DESC`).
+- **Description:** Returns feedback items ordered newest first by default (`?sort=latest|popular`, `?filter=all|mine`, `?q=<search>`, optional `?limit=&offset=`), including social counts (`like_count`, `comment_count`, `liked_by_me`, `is_owner`).
 - **Response (`200 OK`):**
 
 ```json
@@ -155,6 +155,10 @@ Base URL (local): `http://localhost:3000`
     "user_id": 1,
     "avatar_url": null,
     "auth_provider": "local",
+    "like_count": 3,
+    "comment_count": 1,
+    "liked_by_me": false,
+    "is_owner": false,
     "created_at": "2026-11-22T02:55:00.123Z"
   }
 ]
@@ -174,7 +178,7 @@ Base URL (local): `http://localhost:3000`
 
 - **Endpoint:** `POST /api/items`
 - **Headers:** `Content-Type: application/json` (plus active session cookie from `/api/auth/register` or `/api/auth/login`)
-- **Request Body:**
+- **Request Body:** (`name` is optional when logged in and defaults to your profile name; explicit empty string returns `400`)
 
 ```json
 {
@@ -193,6 +197,10 @@ Base URL (local): `http://localhost:3000`
   "user_id": 1,
   "avatar_url": null,
   "auth_provider": "local",
+  "like_count": 0,
+  "comment_count": 0,
+  "liked_by_me": false,
+  "is_owner": true,
   "created_at": "2026-11-22T03:00:00.000Z"
 }
 ```
@@ -201,7 +209,7 @@ Base URL (local): `http://localhost:3000`
 
 ```json
 {
-  "error": "Please log in to post feedback."
+  "error": "Please log in to continue."
 }
 ```
 
@@ -248,6 +256,10 @@ Base URL (local): `http://localhost:3000`
   "user_id": 1,
   "avatar_url": null,
   "auth_provider": "local",
+  "like_count": 1,
+  "comment_count": 0,
+  "liked_by_me": false,
+  "is_owner": true,
   "created_at": "2026-11-22T02:50:10.456Z"
 }
 ```
@@ -278,20 +290,35 @@ Base URL (local): `http://localhost:3000`
 
 ---
 
+### 4. Social Feed & Stats Endpoints
+
+| Method & Route | Auth | Description | Status Codes |
+|---|---|---|---|
+| `GET /api/stats` | Public | Returns `{ totalPosts, totalMembers, postsToday, latestPostId }` | `200`, `500` |
+| `DELETE /api/items/:id` | Owner | Deletes a post owned by the signed-in user | `200`, `400`, `401`, `403`, `404`, `500` |
+| `POST /api/items/:id/like` | Required | Toggles a like and returns `{ post_id, liked, like_count }` | `200`, `400`, `401`, `404`, `500` |
+| `GET /api/items/:id/comments` | Public | Returns comments for a post ordered oldest first | `200`, `400`, `404`, `500` |
+| `POST /api/items/:id/comments` | Required | Adds a comment (`{ body }`, max 280 chars) to a post | `201`, `400`, `401`, `404`, `500` |
+| `POST /api/items/:id/report` | Required | Submits a report (`{ reason }`) for a post | `201`, `400`, `401`, `404`, `500` |
+
+---
+
 ## Testing with Postman
 
 Postman automatically stores cookies returned by `/api/auth/register` and `/api/auth/login` for subsequent requests to the same domain:
 
 | # | Test Case | Method & URL | Body (JSON) | Expected Status | Expected Result |
 |---|-----------|--------------|-------------|-----------------|-----------------|
-| 1 | Reject unauthenticated post | `POST /api/items` *(before login)* | `{"name": "Juan", "message": "Hello"}` | `401 Unauthorized` | Returns `{"error": "Please log in to post feedback."}` |
+| 1 | Reject unauthenticated post | `POST /api/items` *(before login)* | `{"name": "Juan", "message": "Hello"}` | `401 Unauthorized` | Returns `{"error": "Please log in to continue."}` |
 | 2 | Create a new user account | `POST /api/auth/register` | `{"name": "Juan Dela Cruz", "email": "juan@example.com", "password": "Password123"}` | `201 Created` | Returns `{ user }` and sets `batstatewall_session` cookie |
 | 3 | Log in with existing account | `POST /api/auth/login` | `{"email": "juan@example.com", "password": "Password123"}` | `200 OK` | Returns `{ user }` and refreshes session cookie |
-| 4 | Create valid feedback post | `POST /api/items` *(while logged in)* | `{"name": "  Juan Dela Cruz  ", "message": "  Go Red Spartans!  "}` | `201 Created` | Returns created item with trimmed `name` and `message`, generated `id`, and `created_at` |
+| 4 | Create valid feedback post | `POST /api/items` *(while logged in)* | `{"name": "  Juan Dela Cruz  ", "message": "  Go Red Spartans!  "}` | `201 Created` | Returns created item with trimmed `name` and `message`, generated `id`, and social counts |
 | 5 | Fetch all feedback posts | `GET /api/items` | *(none)* | `200 OK` | Returns JSON array of items ordered newest first |
 | 6 | Fetch existing post by ID | `GET /api/items/1` | *(none)* | `200 OK` | Returns the matching item object for `id: 1` |
-| 7 | Reject missing/empty name | `POST /api/items` *(while logged in)* | `{"name": "   ", "message": "Hello BatStateU"}` | `400 Bad Request` | Returns `{"error": "Name is required."}` |
-| 8 | Reject missing/empty message | `POST /api/items` *(while logged in)* | `{"name": "Juan", "message": ""}` | `400 Bad Request` | Returns `{"error": "Message is required."}` |
-| 9 | Reject message over 280 characters | `POST /api/items` *(while logged in)* | `{"name": "Juan", "message": "<281+ character string>"}` | `400 Bad Request` | Returns `{"error": "Message must be 280 characters or fewer."}` |
-| 10 | Reject non-numeric item ID | `GET /api/items/abc` | *(none)* | `400 Bad Request` | Returns `{"error": "Invalid ID. ID must be a number."}` |
-| 11 | Handle non-existent item ID | `GET /api/items/999999` | *(none)* | `404 Not Found` | Returns `{"error": "Item not found."}` |
+| 7 | Toggle like on post | `POST /api/items/1/like` *(while logged in)* | *(none)* | `200 OK` | Returns `{ post_id, liked, like_count }` |
+| 8 | Add comment to post | `POST /api/items/1/comments` *(while logged in)* | `{"body": "Great feedback!"}` | `201 Created` | Returns created comment object |
+| 9 | Reject missing/empty name | `POST /api/items` *(while logged in)* | `{"name": "   ", "message": "Hello BatStateU"}` | `400 Bad Request` | Returns `{"error": "Name is required."}` |
+| 10 | Reject missing/empty message | `POST /api/items` *(while logged in)* | `{"name": "Juan", "message": ""}` | `400 Bad Request` | Returns `{"error": "Message is required."}` |
+| 11 | Reject message over 280 characters | `POST /api/items` *(while logged in)* | `{"name": "Juan", "message": "<281+ character string>"}` | `400 Bad Request` | Returns `{"error": "Message must be 280 characters or fewer."}` |
+| 12 | Reject non-numeric item ID | `GET /api/items/abc` | *(none)* | `400 Bad Request` | Returns `{"error": "Invalid ID. ID must be a number."}` |
+| 13 | Handle non-existent item ID | `GET /api/items/999999` | *(none)* | `404 Not Found` | Returns `{"error": "Item not found."}` |

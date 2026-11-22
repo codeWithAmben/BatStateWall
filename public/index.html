@@ -23,19 +23,20 @@
     <script src="app.js" defer></script>
   </head>
   <body>
-    <!-- Atmospheric dark obsidian & crimson backdrop with interactive Three.js WebGL layer -->
+    <!-- Atmospheric dark obsidian & crimson backdrop with 70% dark scrim and WebGL layer -->
     <div class="page-backdrop" aria-hidden="true">
       <div class="backdrop-grid"></div>
       <div class="backdrop-glow"></div>
       <img src="assets/spartan-bg.png" alt="" class="backdrop-art backdrop-left" />
       <img src="assets/campus-bg.png" alt="" class="backdrop-art backdrop-right" />
+      <div class="backdrop-scrim"></div>
       <canvas id="webgl-bg" class="webgl-bg"></canvas>
     </div>
 
-    <!-- Top navigation / brand header -->
+    <!-- Sticky Facebook-style Top Header -->
     <header class="site-header">
       <div class="header-inner">
-        <div class="brand-group">
+        <a href="/" class="brand-group" aria-label="BatStateWall Home">
           <div class="brand-emblem" aria-hidden="true">
             <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
               <defs>
@@ -58,24 +59,48 @@
               />
             </svg>
           </div>
-          <div class="brand-divider" aria-hidden="true"></div>
           <div class="brand-text">
             <h1>BatState<span class="brand-accent">Wall</span></h1>
-            <div class="brand-subrow">
-              <p class="tagline">BatStateU Feedback Wall</p>
-            </div>
+            <p class="tagline">BatStateU Feedback Wall</p>
           </div>
+        </a>
+
+        <!-- Search Posts -->
+        <div class="header-search">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="search"
+            id="search-input"
+            placeholder="Search posts..."
+            aria-label="Search posts"
+          />
+          <button type="button" id="search-clear-btn" class="search-clear-btn" aria-label="Clear search" hidden>
+            &times;
+          </button>
         </div>
 
-        <div class="header-meta">
-          <div class="live-pill">
-            <span class="live-status">
-              <span class="live-dot" aria-hidden="true"></span>
-              <span>LIVE FEED</span>
-            </span>
-            <span class="pill-divider" aria-hidden="true"></span>
-            <span class="live-count">Total posts: <strong id="header-total-posts">0</strong></span>
+        <!-- Right Controls: Live Pill + Mobile Info Sheet Trigger + Profile Menu -->
+        <div class="header-right">
+          <div class="live-pill" title="Live community feed">
+            <span class="live-dot" aria-hidden="true"></span>
+            <span class="live-label">Live</span>
           </div>
+
+          <button
+            type="button"
+            id="open-info-btn"
+            class="btn-icon-round mobile-info-btn"
+            aria-label="Community info and guidelines"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </button>
 
           <div id="auth-controls" class="auth-controls">
             <div id="auth-guest-actions" class="auth-guest-actions">
@@ -83,189 +108,174 @@
               <button type="button" id="open-register-btn" class="btn-primary btn-sm">Create Account</button>
             </div>
 
-            <div id="auth-user-chip" class="user-chip" hidden>
-              <div id="user-chip-avatar" class="user-avatar" aria-hidden="true"></div>
-              <div class="user-chip-info">
+            <div id="auth-user-menu" class="profile-menu-wrap" hidden>
+              <button
+                type="button"
+                id="profile-menu-btn"
+                class="profile-chip-btn"
+                aria-haspopup="menu"
+                aria-expanded="false"
+                aria-label="Open account menu"
+              >
+                <span id="user-chip-avatar" class="user-avatar" aria-hidden="true"></span>
                 <span id="user-chip-name" class="user-chip-name"></span>
-                <span id="user-chip-google" class="google-badge" hidden>Gmail</span>
+                <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+
+              <div id="profile-dropdown" class="dropdown-menu profile-dropdown" role="menu" hidden>
+                <div class="dropdown-user-header">
+                  <strong id="dropdown-user-name"></strong>
+                  <span id="dropdown-user-email"></span>
+                  <span id="dropdown-user-google" class="google-badge" hidden>Signed in with Google</span>
+                </div>
+                <div class="dropdown-divider"></div>
+                <button type="button" id="menu-my-posts" class="dropdown-item" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  <span>My Posts</span>
+                </button>
+                <button type="button" id="logout-btn" class="dropdown-item danger" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                  <span>Log Out</span>
+                </button>
               </div>
-              <button type="button" id="logout-btn" class="btn-logout">Log Out</button>
             </div>
           </div>
         </div>
       </div>
     </header>
 
-    <main class="container">
-      <!-- Feedback submission card -->
-      <section class="glass-card form-card" aria-labelledby="form-heading">
-        <div class="card-header">
-          <div class="card-icon-badge" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              <path d="M8 10h8" />
-              <path d="M8 14h5" />
-            </svg>
-          </div>
-          <div class="card-header-text">
-            <h2 id="form-heading" class="card-title">Share Your Feedback</h2>
-            <p class="card-subtitle">Your voice matters! Help us improve our community.</p>
-          </div>
-        </div>
-
-        <!-- Shown when the visitor is not signed in -->
-        <div id="form-auth-gate" class="form-auth-gate">
-          <div class="gate-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
-          </div>
-          <h3 class="gate-title">Sign in to share your feedback</h3>
-          <p class="gate-subtitle">
-            Create an account or log in with Gmail / Google to post on the BatStateU wall.
-          </p>
-
-          <div class="gate-actions">
-            <a id="gate-google-btn" class="btn-google" href="/api/auth/google">
-              <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="#EA4335"
-                  d="M12 5.04c1.64 0 3.12.56 4.28 1.67l3.2-3.2C17.54 1.69 14.95.6 12 .6 7.42.6 3.46 3.22 1.54 7.04l3.73 2.9C6.15 7.12 8.83 5.04 12 5.04z"
-                />
-                <path
-                  fill="#4285F4"
-                  d="M23.49 12.27c0-.79-.07-1.55-.2-2.27H12v4.3h6.45c-.28 1.49-1.12 2.75-2.38 3.6l3.69 2.86c2.16-1.99 3.73-4.92 3.73-8.49z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.27 14.06a6.94 6.94 0 0 1 0-4.12l-3.73-2.9a11.39 11.39 0 0 0 0 9.92l3.73-2.9z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23.4c2.95 0 5.44-.98 7.25-2.64l-3.69-2.86c-.98.66-2.23 1.06-3.56 1.06-3.17 0-5.85-2.08-6.73-4.9l-3.73 2.9C3.46 20.78 7.42 23.4 12 23.4z"
-                />
-              </svg>
-              <span>Continue with Google (Gmail)</span>
-            </a>
-
-            <div class="gate-secondary-actions">
-              <button type="button" id="gate-login-btn" class="btn-ghost">Log In</button>
-              <button type="button" id="gate-register-btn" class="btn-primary">Create Account</button>
-            </div>
-          </div>
-
-          <div id="gate-notice" class="form-error" role="status" hidden></div>
-        </div>
-
-        <!-- Shown when the visitor is signed in (novalidate allows API validation errors under the form) -->
-        <form id="feedback-form" novalidate hidden>
-          <div id="posting-as-bar" class="posting-as-bar">
-            <span>Posting as <strong id="posting-as-name"></strong></span>
-            <span class="posting-as-email">(<span id="posting-as-email"></span>)</span>
-          </div>
-
-          <div class="form-group">
-            <label for="name-input" class="field-label">
-              <svg class="label-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              <span>Your Name</span>
-            </label>
-            <div class="input-wrapper">
-              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              <input
-                type="text"
-                id="name-input"
-                name="name"
-                placeholder="e.g., Juan Dela Cruz"
-                autocomplete="name"
-              />
-            </div>
-          </div>
-
-          <div class="form-group">
-            <div class="label-row">
-              <label for="message-input" class="field-label">
-                <svg class="label-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                </svg>
-                <span>Message</span>
-              </label>
-              <span id="char-counter" class="char-counter" aria-live="polite">0 / 280</span>
-            </div>
-            <textarea
-              id="message-input"
-              name="message"
-              rows="4"
-              maxlength="280"
-              placeholder="Write your feedback or shoutout for the BatStateU community..."
-            ></textarea>
-            <div class="char-progress" aria-hidden="true">
-              <div id="char-progress-fill" class="char-progress-fill"></div>
-            </div>
-          </div>
-
-          <div class="form-footer">
-            <p class="form-hint">Keep posts respectful and constructive</p>
-            <button type="submit" id="submit-btn" class="btn-primary">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-              <span class="btn-label">Post Feedback</span>
+    <!-- 2-Column Desktop Shell: Centered Feed (~680px) + Sticky Right Sidebar (320px) -->
+    <div class="app-shell">
+      <main class="feed-column">
+        <!-- Compact Composer Strip -->
+        <section class="fb-card composer-card" aria-label="Create a post">
+          <div class="composer-row">
+            <div id="composer-avatar" class="composer-avatar" aria-hidden="true">?</div>
+            <button type="button" id="composer-trigger" class="composer-trigger">
+              Log in to share your feedback...
             </button>
           </div>
+          <div id="gate-notice" class="inline-alert" role="status" hidden></div>
+        </section>
 
-          <!-- API validation or request errors render directly under the form -->
-          <div id="form-error" class="form-error" role="alert" hidden></div>
-        </form>
-      </section>
-
-      <!-- Community feedback wall card -->
-      <section class="glass-card wall-card" aria-labelledby="wall-heading">
-        <div class="wall-header">
-          <div class="wall-title-wrap">
-            <div class="wall-icon-badge" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            </div>
-            <div class="wall-heading-group">
-              <h2 id="wall-heading" class="card-title">Community Wall</h2>
-              <p class="wall-subtitle">Latest messages from the BatStateU community</p>
-            </div>
+        <!-- Feed Sort & Filter Toolbar -->
+        <div class="feed-toolbar">
+          <div class="toolbar-left">
+            <label for="sort-select" class="sr-only">Sort posts</label>
+            <select id="sort-select" class="sort-select" aria-label="Sort posts">
+              <option value="latest">Latest</option>
+              <option value="popular">Most Liked</option>
+            </select>
           </div>
-          <span class="total-badge">Total posts: <strong id="total-posts">0</strong></span>
-        </div>
 
-        <div id="posts-list" class="posts-list" aria-live="polite" aria-label="Community feedback posts">
-          <div class="skeleton-card" aria-hidden="true">
-            <div class="skeleton-avatar"></div>
-            <div class="skeleton-lines">
-              <div class="skeleton-line short"></div>
-              <div class="skeleton-line long"></div>
-              <div class="skeleton-line medium"></div>
-            </div>
-          </div>
-          <div class="skeleton-card" aria-hidden="true">
-            <div class="skeleton-avatar"></div>
-            <div class="skeleton-lines">
-              <div class="skeleton-line short"></div>
-              <div class="skeleton-line long"></div>
-            </div>
+          <div class="filter-tabs" role="group" aria-label="Filter posts">
+            <button type="button" id="filter-all" class="filter-tab is-active" data-filter="all">All</button>
+            <button type="button" id="filter-mine" class="filter-tab" data-filter="mine">Mine</button>
           </div>
         </div>
-      </section>
-    </main>
+
+        <!-- Non-intrusive Live New Posts Pill -->
+        <div id="new-posts-wrap" class="new-posts-wrap" hidden>
+          <button type="button" id="new-posts-pill" class="new-posts-pill">
+            &#8593; <span id="new-posts-count">0</span> new posts
+          </button>
+        </div>
+
+        <!-- Inline Error & Retry Banner -->
+        <div id="feed-error" class="feed-error" role="alert" hidden>
+          <span id="feed-error-text">Unable to load posts.</span>
+          <button type="button" id="feed-retry-btn" class="btn-ghost btn-sm">Retry</button>
+        </div>
+
+        <!-- Social Feed Posts List -->
+        <div id="posts-list" class="posts-list" aria-live="polite" aria-label="Community feed">
+          <div class="fb-card skeleton-post" aria-hidden="true">
+            <div class="skeleton-head">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-meta">
+                <div class="skeleton-line w-40"></div>
+                <div class="skeleton-line w-25"></div>
+              </div>
+            </div>
+            <div class="skeleton-line w-90"></div>
+            <div class="skeleton-line w-70"></div>
+          </div>
+          <div class="fb-card skeleton-post" aria-hidden="true">
+            <div class="skeleton-head">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-meta">
+                <div class="skeleton-line w-35"></div>
+                <div class="skeleton-line w-20"></div>
+              </div>
+            </div>
+            <div class="skeleton-line w-85"></div>
+            <div class="skeleton-line w-60"></div>
+          </div>
+          <div class="fb-card skeleton-post" aria-hidden="true">
+            <div class="skeleton-head">
+              <div class="skeleton-avatar"></div>
+              <div class="skeleton-meta">
+                <div class="skeleton-line w-45"></div>
+                <div class="skeleton-line w-25"></div>
+              </div>
+            </div>
+            <div class="skeleton-line w-95"></div>
+          </div>
+        </div>
+
+        <!-- Load More Pagination -->
+        <div id="load-more-wrap" class="load-more-wrap" hidden>
+          <button type="button" id="load-more-btn" class="btn-ghost btn-full">Load more posts</button>
+        </div>
+      </main>
+
+      <!-- Desktop Sticky Right Sidebar -->
+      <aside class="sidebar-column" aria-label="Community information">
+        <section class="fb-card sidebar-card">
+          <h2 class="sidebar-title">About BatStateWall</h2>
+          <p class="sidebar-copy">
+            The public community feedback wall for Batangas State University — share shoutouts,
+            campus ideas, and student voices in real time.
+          </p>
+        </section>
+
+        <section class="fb-card sidebar-card">
+          <h2 class="sidebar-title">Community Stats</h2>
+          <div class="stats-grid">
+            <div class="stat-item">
+              <strong id="stat-total-posts">0</strong>
+              <span>Total posts</span>
+            </div>
+            <div class="stat-item">
+              <strong id="stat-total-members">0</strong>
+              <span>Members</span>
+            </div>
+            <div class="stat-item">
+              <strong id="stat-posts-today">0</strong>
+              <span>Today</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="fb-card sidebar-card">
+          <h2 class="sidebar-title">Posting Guidelines</h2>
+          <ul class="guidelines-list">
+            <li>Keep posts respectful and constructive.</li>
+            <li>Stay clear and concise (up to 280 characters).</li>
+            <li>Represent the Red Spartan community with pride.</li>
+          </ul>
+        </section>
+      </aside>
+    </div>
 
     <footer class="site-footer">
       <p>
@@ -274,14 +284,97 @@
       </p>
     </footer>
 
-    <!-- Glassmorphic Authentication Modal (Log In / Create Account / Gmail) -->
-    <div id="auth-modal" class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title" hidden>
-      <div class="auth-backdrop" data-close-modal="true"></div>
-      <div class="auth-dialog">
-        <div class="auth-modal-header">
+    <!-- Expanded Create Post Modal (2-click posting) -->
+    <div id="composer-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="composer-modal-title" hidden>
+      <div class="modal-backdrop" data-close-composer="true"></div>
+      <div class="modal-dialog composer-dialog">
+        <div class="modal-header">
+          <h2 id="composer-modal-title" class="modal-title">Create post</h2>
+          <button type="button" id="close-composer-modal" class="btn-icon-close" aria-label="Close create post modal">
+            &times;
+          </button>
+        </div>
+
+        <div class="composer-identity">
+          <div id="composer-modal-avatar" class="user-avatar composer-modal-avatar" aria-hidden="true"></div>
           <div>
-            <h2 id="auth-modal-title" class="card-title">Welcome Back</h2>
-            <p id="auth-modal-subtitle" class="card-subtitle">Sign in to share feedback on BatStateWall</p>
+            <div class="posting-name">Posting as <strong id="posting-as-name"></strong></div>
+            <div class="posting-scope">&#127760; Public &middot; BatStateU Community</div>
+          </div>
+        </div>
+
+        <form id="feedback-form" novalidate>
+          <label for="message-input" class="sr-only">Write your post</label>
+          <textarea
+            id="message-input"
+            name="message"
+            class="composer-textarea"
+            rows="4"
+            maxlength="280"
+            placeholder="What's on your mind?"
+          ></textarea>
+
+          <div class="composer-meta-row">
+            <span id="char-counter" class="char-counter" hidden aria-live="polite">0 / 280</span>
+          </div>
+
+          <button type="submit" id="submit-btn" class="btn-primary btn-full" disabled>
+            <span class="btn-label">Post</span>
+          </button>
+
+          <div id="form-error" class="form-error" role="alert" hidden></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Mobile Info & Guidelines Sheet (< 1024px) -->
+    <div id="info-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="info-modal-title" hidden>
+      <div class="modal-backdrop" data-close-info="true"></div>
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h2 id="info-modal-title" class="modal-title">About BatStateWall</h2>
+          <button type="button" id="close-info-modal" class="btn-icon-close" aria-label="Close community info">
+            &times;
+          </button>
+        </div>
+
+        <p class="sidebar-copy">
+          The public community feedback wall for Batangas State University — share shoutouts,
+          campus ideas, and student voices in real time.
+        </p>
+
+        <div class="stats-grid modal-stats">
+          <div class="stat-item">
+            <strong id="mobile-stat-posts">0</strong>
+            <span>Total posts</span>
+          </div>
+          <div class="stat-item">
+            <strong id="mobile-stat-members">0</strong>
+            <span>Members</span>
+          </div>
+          <div class="stat-item">
+            <strong id="mobile-stat-today">0</strong>
+            <span>Today</span>
+          </div>
+        </div>
+
+        <h3 class="info-subheading">Posting Guidelines</h3>
+        <ul class="guidelines-list">
+          <li>Keep posts respectful and constructive.</li>
+          <li>Stay clear and concise (up to 280 characters).</li>
+          <li>Represent the Red Spartan community with pride.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Glassmorphic Authentication Modal (Log In / Create Account / Gmail) -->
+    <div id="auth-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title" hidden>
+      <div class="modal-backdrop" data-close-modal="true"></div>
+      <div class="modal-dialog auth-dialog">
+        <div class="modal-header">
+          <div>
+            <h2 id="auth-modal-title" class="modal-title">Welcome Back</h2>
+            <p id="auth-modal-subtitle" class="modal-subtitle">Sign in to share feedback on BatStateWall</p>
           </div>
           <button type="button" id="close-auth-modal" class="btn-icon-close" aria-label="Close modal">&times;</button>
         </div>

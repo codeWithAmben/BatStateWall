@@ -13,6 +13,7 @@ app.set('trust proxy', 1);
 
 const PORT = process.env.PORT || 3000;
 const MAX_MESSAGE_LENGTH = 280;
+const MAX_REPORT_REASON_LENGTH = 200;
 const PG_MAX_INT = 2147483647; // Maximum value for PostgreSQL 32-bit SERIAL/INTEGER
 
 const SESSION_COOKIE = 'batstatewall_session';
@@ -62,7 +63,7 @@ pool.on('error', (err) => {
 });
 
 /**
- * Ensures the users and items tables exist without delaying server startup / port binding.
+ * Ensures all required tables and indexes exist without delaying server startup / port binding.
  */
 async function ensureSchema() {
   if (!process.env.DATABASE_URL) {
@@ -96,6 +97,38 @@ async function ensureSchema() {
     await pool.query(
       'ALTER TABLE items ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;'
     );
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS likes (
+        post_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY (post_id, user_id)
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS comments (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        body TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS reports (
+        id SERIAL PRIMARY KEY,
+        post_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        reason TEXT NOT NULL DEFAULT 'Reported by user',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_likes_post_id ON likes(post_id);');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);');
   } catch (err) {
     console.error('Warning: Automatic schema check failed:', err.message);
   }
@@ -245,18 +278,26 @@ function clearCookie(res, req, name) {
 }
 
 /**
+ * Extracts verified user ID from the session cookie without hitting the database.
+ */
+function getOptionalUserId(req) {
+  const cookies = parseCookies(req);
+  const session = verifySessionToken(cookies[SESSION_COOKIE]);
+  return session ? session.uid : null;
+}
+
+/**
  * Looks up the currently authenticated user from the signed session cookie.
  */
 async function getAuthenticatedUser(req) {
-  const cookies = parseCookies(req);
-  const session = verifySessionToken(cookies[SESSION_COOKIE]);
-  if (!session) {
+  const userId = getOptionalUserId(req);
+  if (!userId) {
     return null;
   }
 
   const result = await pool.query(
     'SELECT id, name, email, avatar_url, auth_provider FROM users WHERE id = $1',
-    [session.uid]
+    [userId]
   );
   return result.rows[0] || null;
 }
@@ -268,7 +309,7 @@ async function requireAuth(req, res, next) {
   try {
     const user = await getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({ error: 'Please log in to post feedback.' });
+      return res.status(401).json({ error: 'Please log in to continue.' });
     }
     req.user = user;
     return next();
@@ -276,6 +317,23 @@ async function requireAuth(req, res, next) {
     console.error('Error verifying session:', err);
     return res.status(500).json({ error: 'Authentication service unavailable.' });
   }
+}
+
+/**
+ * Validates route :id parameters strictly as positive 32-bit PostgreSQL integers.
+ */
+function parseItemId(rawId) {
+  if (!/^\d+$/.test(rawId)) {
+    return { status: 400, error: 'Invalid ID. ID must be a number.' };
+  }
+  const id = Number(rawId);
+  if (!Number.isSafeInteger(id) || id < 1) {
+    return { status: 400, error: 'Invalid ID. ID must be a positive number.' };
+  }
+  if (id > PG_MAX_INT) {
+    return { status: 404, error: 'Item not found.' };
+  }
+  return { id };
 }
 
 function getGoogleRedirectUri(req) {
@@ -316,16 +374,15 @@ app.get('/api/auth/config', (req, res) => {
 
 // GET /api/auth/me - Returns the currently logged-in user or { user: null }
 app.get('/api/auth/me', async (req, res) => {
-  const cookies = parseCookies(req);
-  const session = verifySessionToken(cookies[SESSION_COOKIE]);
-  if (!session) {
+  const userId = getOptionalUserId(req);
+  if (!userId) {
     return res.status(200).json({ user: null });
   }
 
   try {
     const result = await pool.query(
       'SELECT id, name, email, avatar_url, auth_provider FROM users WHERE id = $1',
-      [session.uid]
+      [userId]
     );
     if (result.rows.length === 0) {
       clearCookie(res, req, SESSION_COOKIE);
@@ -484,7 +541,6 @@ app.get('/api/auth/google/callback', async (req, res) => {
   }
 
   try {
-    // Exchange authorization code for an access token
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -507,7 +563,6 @@ app.get('/api/auth/google/callback', async (req, res) => {
       return res.redirect('/?auth_error=google_failed');
     }
 
-    // Fetch the authenticated Google / Gmail user profile
     const profileRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
       headers: { Authorization: `Bearer ${tokenData.access_token}` },
     });
@@ -529,7 +584,6 @@ app.get('/api/auth/google/callback', async (req, res) => {
         : email.split('@')[0].slice(0, MAX_NAME_LENGTH);
     const avatarUrl = sanitizeAvatarUrl(profile.picture);
 
-    // Find an existing user by google_id or matching email, otherwise create one
     const existing = await pool.query(
       'SELECT id, name, email, google_id, avatar_url, auth_provider FROM users WHERE google_id = $1 OR email = $2',
       [profile.sub, email]
@@ -564,19 +618,91 @@ app.get('/api/auth/google/callback', async (req, res) => {
   }
 });
 
-// ==================== Feedback Items Endpoints ====================
+// ==================== Community Stats Endpoint ====================
 
-// GET /api/items - Fetch all feedback items, newest first
+// GET /api/stats - Returns community metrics for the sidebar and live-feed check
+app.get('/api/stats', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM items) AS total_posts,
+        (SELECT COUNT(*)::int FROM users) AS total_members,
+        (SELECT COUNT(*)::int FROM items WHERE created_at >= CURRENT_DATE) AS posts_today,
+        (SELECT COALESCE(MAX(id), 0)::int FROM items) AS latest_post_id
+    `);
+    const row = result.rows[0];
+    return res.status(200).json({
+      totalPosts: row.total_posts,
+      totalMembers: row.total_members,
+      postsToday: row.posts_today,
+      latestPostId: row.latest_post_id,
+    });
+  } catch (err) {
+    console.error('Error fetching stats:', err);
+    return res.status(500).json({ error: 'Failed to load community stats.' });
+  }
+});
+
+// ==================== Feedback Items & Social Endpoints ====================
+
+// GET /api/items - Fetch feedback items with social counts, sorting, search, filter, and optional pagination
 app.get('/api/items', async (req, res) => {
+  const viewerId = getOptionalUserId(req);
+  const sort = req.query.sort === 'popular' ? 'popular' : 'latest';
+  const filter = req.query.filter === 'mine' ? 'mine' : 'all';
+  const searchText = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+
+  if (filter === 'mine' && !viewerId) {
+    return res.status(200).json([]);
+  }
+
+  const params = [viewerId];
+  const whereClauses = [];
+
+  if (filter === 'mine') {
+    params.push(viewerId);
+    whereClauses.push(`i.user_id = $${params.length}`);
+  }
+
+  if (searchText) {
+    params.push(`%${searchText}%`);
+    whereClauses.push(`(i.name ILIKE $${params.length} OR i.message ILIKE $${params.length})`);
+  }
+
+  const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  const orderSql =
+    sort === 'popular'
+      ? 'ORDER BY like_count DESC, i.created_at DESC, i.id DESC'
+      : 'ORDER BY i.created_at DESC, i.id DESC';
+
+  let limitSql = '';
+  if (req.query.limit !== undefined) {
+    const rawLimit = Number(req.query.limit);
+    const limit = Number.isFinite(rawLimit) ? Math.min(50, Math.max(1, Math.trunc(rawLimit))) : 10;
+    const rawOffset = Number(req.query.offset);
+    const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.trunc(rawOffset) : 0;
+    params.push(limit, offset);
+    limitSql = `LIMIT $${params.length - 1} OFFSET $${params.length}`;
+  }
+
   try {
     const query = `
       SELECT i.id, i.name, i.message, i.user_id, i.created_at,
-             u.avatar_url, u.auth_provider
+             u.avatar_url, u.auth_provider,
+             COALESCE(lc.like_count, 0)::int AS like_count,
+             COALESCE(cc.comment_count, 0)::int AS comment_count,
+             CASE WHEN $1::int IS NOT NULL AND ul.user_id IS NOT NULL THEN true ELSE false END AS liked_by_me,
+             CASE WHEN $1::int IS NOT NULL AND i.user_id = $1::int THEN true ELSE false END AS is_owner
       FROM items i
       LEFT JOIN users u ON i.user_id = u.id
-      ORDER BY i.created_at DESC, i.id DESC
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS like_count FROM likes GROUP BY post_id) lc ON lc.post_id = i.id
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS comment_count FROM comments GROUP BY post_id) cc ON cc.post_id = i.id
+      LEFT JOIN likes ul ON ul.post_id = i.id AND ul.user_id = $1::int
+      ${whereSql}
+      ${orderSql}
+      ${limitSql}
     `;
-    const result = await pool.query(query);
+    const result = await pool.query(query, params);
     return res.status(200).json(result.rows);
   } catch (err) {
     console.error('Error fetching items:', err);
@@ -607,7 +733,6 @@ app.post('/api/items', requireAuth, async (req, res) => {
   }
 
   try {
-    // Parameterized query ($1, $2, $3) protects against SQL injection
     const query = `
       INSERT INTO items (name, message, user_id)
       VALUES ($1, $2, $3)
@@ -620,6 +745,10 @@ app.post('/api/items', requireAuth, async (req, res) => {
       ...result.rows[0],
       avatar_url: req.user.avatar_url,
       auth_provider: req.user.auth_provider,
+      like_count: 0,
+      comment_count: 0,
+      liked_by_me: false,
+      is_owner: true,
     });
   } catch (err) {
     console.error('Error creating item:', err);
@@ -629,32 +758,29 @@ app.post('/api/items', requireAuth, async (req, res) => {
 
 // GET /api/items/:id - Fetch a single feedback item by numeric ID
 app.get('/api/items/:id', async (req, res) => {
-  const rawId = req.params.id;
-
-  // Check strictly for digits so strings like "12abc" are rejected with 400
-  if (!/^\d+$/.test(rawId)) {
-    return res.status(400).json({ error: 'Invalid ID. ID must be a number.' });
+  const parsed = parseItemId(req.params.id);
+  if (parsed.error) {
+    return res.status(parsed.status).json({ error: parsed.error });
   }
 
-  const id = Number(rawId);
-  if (!Number.isSafeInteger(id) || id < 1) {
-    return res.status(400).json({ error: 'Invalid ID. ID must be a positive number.' });
-  }
-
-  // Values above PostgreSQL's 32-bit INTEGER max cannot exist in a SERIAL column
-  if (id > PG_MAX_INT) {
-    return res.status(404).json({ error: 'Item not found.' });
-  }
+  const viewerId = getOptionalUserId(req);
 
   try {
     const query = `
       SELECT i.id, i.name, i.message, i.user_id, i.created_at,
-             u.avatar_url, u.auth_provider
+             u.avatar_url, u.auth_provider,
+             COALESCE(lc.like_count, 0)::int AS like_count,
+             COALESCE(cc.comment_count, 0)::int AS comment_count,
+             CASE WHEN $2::int IS NOT NULL AND ul.user_id IS NOT NULL THEN true ELSE false END AS liked_by_me,
+             CASE WHEN $2::int IS NOT NULL AND i.user_id = $2::int THEN true ELSE false END AS is_owner
       FROM items i
       LEFT JOIN users u ON i.user_id = u.id
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS like_count FROM likes GROUP BY post_id) lc ON lc.post_id = i.id
+      LEFT JOIN (SELECT post_id, COUNT(*)::int AS comment_count FROM comments GROUP BY post_id) cc ON cc.post_id = i.id
+      LEFT JOIN likes ul ON ul.post_id = i.id AND ul.user_id = $2::int
       WHERE i.id = $1
     `;
-    const result = await pool.query(query, [id]);
+    const result = await pool.query(query, [parsed.id, viewerId]);
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Item not found.' });
@@ -664,6 +790,187 @@ app.get('/api/items/:id', async (req, res) => {
   } catch (err) {
     console.error('Error fetching item:', err);
     return res.status(500).json({ error: 'Failed to load the requested message.' });
+  }
+});
+
+// DELETE /api/items/:id - Delete a post owned by the authenticated user
+app.delete('/api/items/:id', requireAuth, async (req, res) => {
+  const parsed = parseItemId(req.params.id);
+  if (parsed.error) {
+    return res.status(parsed.status).json({ error: parsed.error });
+  }
+
+  try {
+    const existing = await pool.query('SELECT id, user_id FROM items WHERE id = $1', [parsed.id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Item not found.' });
+    }
+    if (existing.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: 'You can only delete your own posts.' });
+    }
+
+    await pool.query('DELETE FROM items WHERE id = $1', [parsed.id]);
+    return res.status(200).json({ deletedId: parsed.id });
+  } catch (err) {
+    console.error('Error deleting item:', err);
+    return res.status(500).json({ error: 'Failed to delete post.' });
+  }
+});
+
+// POST /api/items/:id/like - Toggle a like on a post for the authenticated user
+app.post('/api/items/:id/like', requireAuth, async (req, res) => {
+  const parsed = parseItemId(req.params.id);
+  if (parsed.error) {
+    return res.status(parsed.status).json({ error: parsed.error });
+  }
+
+  try {
+    const exists = await pool.query('SELECT id FROM items WHERE id = $1', [parsed.id]);
+    if (exists.rows.length === 0) {
+      return res.status(404).json({ error: 'Item not found.' });
+    }
+
+    const existingLike = await pool.query(
+      'SELECT 1 FROM likes WHERE post_id = $1 AND user_id = $2',
+      [parsed.id, req.user.id]
+    );
+
+    let liked = false;
+    if (existingLike.rows.length > 0) {
+      await pool.query('DELETE FROM likes WHERE post_id = $1 AND user_id = $2', [
+        parsed.id,
+        req.user.id,
+      ]);
+      liked = false;
+    } else {
+      await pool.query(
+        'INSERT INTO likes (post_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+        [parsed.id, req.user.id]
+      );
+      liked = true;
+    }
+
+    const countResult = await pool.query(
+      'SELECT COUNT(*)::int AS like_count FROM likes WHERE post_id = $1',
+      [parsed.id]
+    );
+
+    return res.status(200).json({
+      post_id: parsed.id,
+      liked,
+      like_count: countResult.rows[0].like_count,
+    });
+  } catch (err) {
+    console.error('Error toggling like:', err);
+    return res.status(500).json({ error: 'Failed to update like.' });
+  }
+});
+
+// GET /api/items/:id/comments - Fetch comments for a post ordered oldest first
+app.get('/api/items/:id/comments', async (req, res) => {
+  const parsed = parseItemId(req.params.id);
+  if (parsed.error) {
+    return res.status(parsed.status).json({ error: parsed.error });
+  }
+
+  const viewerId = getOptionalUserId(req);
+
+  try {
+    const exists = await pool.query('SELECT id FROM items WHERE id = $1', [parsed.id]);
+    if (exists.rows.length === 0) {
+      return res.status(404).json({ error: 'Item not found.' });
+    }
+
+    const result = await pool.query(
+      `SELECT c.id, c.post_id, c.user_id, c.body, c.created_at,
+              u.name AS author_name, u.avatar_url, u.auth_provider,
+              CASE WHEN $2::int IS NOT NULL AND c.user_id = $2::int THEN true ELSE false END AS is_owner
+       FROM comments c
+       JOIN users u ON c.user_id = u.id
+       WHERE c.post_id = $1
+       ORDER BY c.created_at ASC, c.id ASC`,
+      [parsed.id, viewerId]
+    );
+
+    return res.status(200).json(result.rows);
+  } catch (err) {
+    console.error('Error fetching comments:', err);
+    return res.status(500).json({ error: 'Failed to load comments.' });
+  }
+});
+
+// POST /api/items/:id/comments - Add a comment to a post (requires login)
+app.post('/api/items/:id/comments', requireAuth, async (req, res) => {
+  const parsed = parseItemId(req.params.id);
+  if (parsed.error) {
+    return res.status(parsed.status).json({ error: parsed.error });
+  }
+
+  const rawBody = req.body ? req.body.body : '';
+  const trimmedBody = typeof rawBody === 'string' ? rawBody.trim() : '';
+
+  if (!trimmedBody) {
+    return res.status(400).json({ error: 'Comment cannot be empty.' });
+  }
+  if (trimmedBody.length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({ error: 'Comment must be 280 characters or fewer.' });
+  }
+
+  try {
+    const exists = await pool.query('SELECT id FROM items WHERE id = $1', [parsed.id]);
+    if (exists.rows.length === 0) {
+      return res.status(404).json({ error: 'Item not found.' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO comments (post_id, user_id, body)
+       VALUES ($1, $2, $3)
+       RETURNING id, post_id, user_id, body, created_at`,
+      [parsed.id, req.user.id, trimmedBody]
+    );
+
+    return res.status(201).json({
+      ...result.rows[0],
+      author_name: req.user.name,
+      avatar_url: req.user.avatar_url,
+      auth_provider: req.user.auth_provider,
+      is_owner: true,
+    });
+  } catch (err) {
+    console.error('Error creating comment:', err);
+    return res.status(500).json({ error: 'Failed to post comment.' });
+  }
+});
+
+// POST /api/items/:id/report - Submit a report for a post (requires login)
+app.post('/api/items/:id/report', requireAuth, async (req, res) => {
+  const parsed = parseItemId(req.params.id);
+  if (parsed.error) {
+    return res.status(parsed.status).json({ error: parsed.error });
+  }
+
+  const rawReason = req.body ? req.body.reason : '';
+  const trimmedReason =
+    typeof rawReason === 'string' && rawReason.trim()
+      ? rawReason.trim().slice(0, MAX_REPORT_REASON_LENGTH)
+      : 'Reported by user';
+
+  try {
+    const exists = await pool.query('SELECT id FROM items WHERE id = $1', [parsed.id]);
+    if (exists.rows.length === 0) {
+      return res.status(404).json({ error: 'Item not found.' });
+    }
+
+    await pool.query('INSERT INTO reports (post_id, user_id, reason) VALUES ($1, $2, $3)', [
+      parsed.id,
+      req.user.id,
+      trimmedReason,
+    ]);
+
+    return res.status(201).json({ message: 'Report submitted. Thank you.' });
+  } catch (err) {
+    console.error('Error reporting item:', err);
+    return res.status(500).json({ error: 'Failed to submit report.' });
   }
 });
 

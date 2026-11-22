@@ -9,6 +9,7 @@ const sceneApi = {
   pulseTyping() {},
   pulseSuccess() {},
   pulseError() {},
+  // Kept as a no-op so feed cards stay steady without 3D tilt jittering menus/inputs
   refreshCardEffects() {},
 };
 window.BatStateScene = sceneApi;
@@ -39,75 +40,6 @@ function createEmberTexture() {
   texture.needsUpdate = true;
   return texture;
 }
-
-/**
- * Attaches interactive 3D perspective tilt and cursor-tracking crimson spotlight
- * to cards on desktop devices with fine pointer input.
- */
-function bindTiltAndSpotlight(element, maxTiltDeg, isFormCard) {
-  if (!element || element.dataset.fxBound === '1') {
-    return;
-  }
-  element.dataset.fxBound = '1';
-
-  element.addEventListener('pointermove', (event) => {
-    const rect = element.getBoundingClientRect();
-    if (!rect.width || !rect.height) {
-      return;
-    }
-
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-
-    // Update radial cursor spotlight coordinates inside CSS
-    element.style.setProperty('--spot-x', `${x.toFixed(1)}px`);
-    element.style.setProperty('--spot-y', `${y.toFixed(1)}px`);
-    element.style.setProperty('--spot-opacity', isFormCard ? '0.1' : '0.14');
-
-    // Skip tilting the form card while typing inside one of its inputs
-    if (isFormCard && element.contains(document.activeElement)) {
-      const tag = document.activeElement.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA') {
-        element.classList.remove('is-tilting');
-        element.style.transform = '';
-        return;
-      }
-    }
-
-    const normX = (x / rect.width - 0.5) * 2;
-    const normY = (y / rect.height - 0.5) * 2;
-    const rotateY = normX * maxTiltDeg;
-    const rotateX = -normY * maxTiltDeg;
-
-    element.classList.add('is-tilting');
-    element.style.transform = `perspective(950px) rotateX(${rotateX.toFixed(2)}deg) rotateY(${rotateY.toFixed(2)}deg)`;
-  });
-
-  element.addEventListener('pointerleave', () => {
-    element.classList.remove('is-tilting');
-    element.style.setProperty('--spot-opacity', '0');
-    element.style.transform = '';
-  });
-}
-
-/**
- * Binds 3D tilt and cursor spotlight effects to the form card and all feedback post cards.
- */
-function attachCardEffects() {
-  if (prefersReducedMotion || !hasFinePointer) {
-    return;
-  }
-
-  const formCard = document.querySelector('.form-card');
-  bindTiltAndSpotlight(formCard, 1.8, true);
-
-  document.querySelectorAll('.post-card').forEach((card) => {
-    bindTiltAndSpotlight(card, 3, false);
-  });
-}
-
-sceneApi.refreshCardEffects = attachCardEffects;
-attachCardEffects();
 
 /**
  * Initializes the Three.js WebGL background scene on #webgl-bg.
@@ -173,7 +105,7 @@ function initWebGLScene() {
     color: 0xd32f2f,
     wireframe: true,
     transparent: true,
-    opacity: 0.18,
+    opacity: 0.16,
   });
   const gridMesh = new THREE.Mesh(gridGeometry, gridMaterial);
   gridMesh.rotation.x = -Math.PI / 2.25;
@@ -195,12 +127,12 @@ function initWebGLScene() {
       color: 0xef4444,
       wireframe: true,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.36,
     })
   );
   const leftRing = new THREE.Mesh(
     new THREE.TorusGeometry(2.35, 0.032, 12, 64),
-    new THREE.MeshBasicMaterial({ color: 0xd32f2f, transparent: true, opacity: 0.52 })
+    new THREE.MeshBasicMaterial({ color: 0xd32f2f, transparent: true, opacity: 0.45 })
   );
   leftRing.rotation.set(Math.PI / 3, Math.PI / 5, 0);
   leftGroup.add(leftCore, leftShell, leftRing);
@@ -214,12 +146,12 @@ function initWebGLScene() {
       color: 0xef4444,
       wireframe: true,
       transparent: true,
-      opacity: 0.4,
+      opacity: 0.34,
     })
   );
   const rightRing = new THREE.Mesh(
     new THREE.TorusGeometry(2.2, 0.03, 12, 64),
-    new THREE.MeshBasicMaterial({ color: 0xd32f2f, transparent: true, opacity: 0.48 })
+    new THREE.MeshBasicMaterial({ color: 0xd32f2f, transparent: true, opacity: 0.42 })
   );
   rightRing.rotation.set(-Math.PI / 3, -Math.PI / 6, 0);
   rightGroup.add(rightCore, rightShell, rightRing);
@@ -228,7 +160,7 @@ function initWebGLScene() {
   function layoutEmblems() {
     const isNarrow = window.innerWidth < 900;
     const scale = isNarrow ? 0.62 : 1;
-    const spreadX = isNarrow ? 6.4 : 8.4;
+    const spreadX = isNarrow ? 6.4 : 8.8;
 
     leftGroup.scale.setScalar(scale);
     leftGroup.position.set(-spreadX, 0.6, -3);
@@ -273,7 +205,7 @@ function initWebGLScene() {
     map: emberTexture,
     vertexColors: true,
     transparent: true,
-    opacity: 0.78,
+    opacity: 0.72,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
@@ -354,12 +286,10 @@ function initWebGLScene() {
     lastTime = now;
     elapsedTime += dt;
 
-    // Decay reactive boosts smoothly over time
     typingBoost *= Math.exp(-dt * 4);
     successBoost *= Math.exp(-dt * 2.2);
     errorBoost *= Math.exp(-dt * 4.5);
 
-    // Undulate the crimson horizon grid
     for (let i = 0; i < gridPosAttr.count; i += 1) {
       const x = gridPosAttr.getX(i);
       const y = gridPosAttr.getY(i);
@@ -370,7 +300,6 @@ function initWebGLScene() {
     }
     gridPosAttr.needsUpdate = true;
 
-    // Float and rotate left/right 3D emblems
     const emblemSpin = 0.24 + successBoost * 1.4;
     leftGroup.rotation.y += dt * emblemSpin;
     leftGroup.rotation.x = Math.sin(elapsedTime * 0.55) * 0.16;
@@ -382,7 +311,6 @@ function initWebGLScene() {
     rightGroup.position.y = -0.3 + Math.cos(elapsedTime * 0.85) * 0.35;
     rightRing.rotation.z -= dt * 0.42;
 
-    // Drift glowing ember particles upward with wrap-around
     const speedMultiplier = 1 + typingBoost * 1.1 + successBoost * 3.2;
     const posArray = particleGeometry.attributes.position.array;
     for (let i = 0; i < particleCount; i += 1) {
@@ -397,7 +325,6 @@ function initWebGLScene() {
     }
     particleGeometry.attributes.position.needsUpdate = true;
 
-    // Animate post-success shockwave ring expansion
     if (shockwaveProgress > 0) {
       shockwaveProgress += dt / 1.1;
       if (shockwaveProgress >= 1) {
@@ -411,11 +338,9 @@ function initWebGLScene() {
       }
     }
 
-    // Update center crimson light intensity based on typing, success, or error state
     const errorFlicker = errorBoost > 0.02 ? (0.5 + 0.5 * Math.sin(elapsedTime * 36)) * errorBoost : 0;
     centerLight.intensity = 6 + typingBoost * 10 + successBoost * 26 + errorFlicker * 18;
 
-    // Smoothly damp camera parallax toward pointer position
     const targetCamX = pointerX * 0.85;
     const targetCamY = 1.4 + pointerY * 0.55;
     const camLerp = 1 - Math.exp(-dt * 5);
@@ -426,7 +351,6 @@ function initWebGLScene() {
     renderer.render(scene, camera);
   }
 
-  // Pause WebGL rendering when the browser tab is hidden to save battery and GPU
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       if (animationFrameId !== null) {
