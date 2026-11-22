@@ -272,6 +272,9 @@ function closeAllMenus() {
   document.querySelectorAll('.post-dropdown:not([hidden])').forEach((menu) => {
     menu.hidden = true;
   });
+  document.querySelectorAll('.post-card.menu-open').forEach((card) => {
+    card.classList.remove('menu-open');
+  });
 }
 
 function showGateNotice(message) {
@@ -1467,10 +1470,14 @@ postsList?.addEventListener('click', (event) => {
   if (action === 'toggle-menu') {
     event.stopPropagation();
     const menu = actionEl.nextElementSibling;
+    const card = actionEl.closest('.post-card');
     const willOpen = menu && menu.hidden;
     closeAllMenus();
     if (menu) {
       menu.hidden = !willOpen;
+      if (card) {
+        card.classList.toggle('menu-open', Boolean(willOpen));
+      }
       const deleteBtn = menu.querySelector('[data-action="delete-post"]');
       if (deleteBtn) {
         delete deleteBtn.dataset.confirmed;

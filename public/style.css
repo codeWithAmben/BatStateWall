@@ -771,13 +771,19 @@ body {
 .post-card {
   position: relative;
   transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
-  animation: postFadeIn 0.22s ease-out both;
+  animation: postFadeIn 0.22s ease-out backwards;
 }
 
 .post-card:hover {
   border-color: rgba(255, 255, 255, 0.12);
   transform: translateY(-1px);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
+}
+
+.post-card.menu-open,
+.post-card:has(.post-dropdown:not([hidden])) {
+  z-index: 25;
+  transform: none;
 }
 
 .post-card.is-highlighted {
