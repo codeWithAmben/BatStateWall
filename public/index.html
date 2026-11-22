@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BatStateWall — BatStateU Feedback Wall</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="header-inner">
+        <h1>BatStateWall</h1>
+        <p class="tagline">BatStateU Feedback Wall</p>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- Feedback submission card -->
+      <section class="card form-card" aria-labelledby="form-heading">
+        <h2 id="form-heading" class="section-title">Share Your Feedback</h2>
+
+        <!-- novalidate allows server-side API validation errors to be shown cleanly under the form -->
+        <form id="feedback-form" novalidate>
+          <div class="form-group">
+            <label for="name-input">Your Name</label>
+            <input
+              type="text"
+              id="name-input"
+              name="name"
+              placeholder="e.g., Juan Dela Cruz"
+              autocomplete="name"
+            />
+          </div>
+
+          <div class="form-group">
+            <div class="label-row">
+              <label for="message-input">Message</label>
+              <span id="char-counter" class="char-counter" aria-live="polite">0 / 280</span>
+            </div>
+            <textarea
+              id="message-input"
+              name="message"
+              rows="4"
+              maxlength="280"
+              placeholder="Write your feedback or shoutout for the BatStateU community..."
+            ></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" id="submit-btn" class="btn-primary">Post Feedback</button>
+          </div>
+
+          <!-- API validation or request errors render directly under the form -->
+          <div id="form-error" class="form-error" role="alert" hidden></div>
+        </form>
+      </section>
+
+      <!-- Feedback posts wall -->
+      <section class="wall-section" aria-labelledby="wall-heading">
+        <div class="wall-header">
+          <h2 id="wall-heading" class="section-title">Feedback Wall</h2>
+          <span class="total-badge">Total posts: <strong id="total-posts">0</strong></span>
+        </div>
+
+        <div id="posts-list" class="posts-list" aria-live="polite">
+          <div class="card empty-state">Loading feedback...</div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>BatStateWall &middot; IT 412 Platform Technologies &middot; Batangas State University</p>
+    </footer>
+  </body>
+</html>

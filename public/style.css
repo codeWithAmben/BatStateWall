@@ -1,0 +1,279 @@
+/* BatStateWall Styles — Batangas State University Red & White Theme */
+:root {
+  --bsu-red: #d32f2f;
+  --bsu-red-dark: #b71c1c;
+  --bsu-red-light: #ffebee;
+  --bsu-red-border: #ef9a9a;
+  --bg-page: #f5f5f5;
+  --bg-card: #ffffff;
+  --text-main: #212121;
+  --text-muted: #616161;
+  --border-color: #e0e0e0;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-page);
+  color: var(--text-main);
+  line-height: 1.5;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.site-header {
+  background-color: var(--bsu-red);
+  color: #ffffff;
+  padding: 1.75rem 1rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.header-inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.site-header h1 {
+  font-size: 1.85rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tagline {
+  margin-top: 0.2rem;
+  font-size: 1rem;
+  opacity: 0.92;
+}
+
+/* Main Layout */
+.container {
+  width: 100%;
+  max-width: 720px;
+  margin: 1.75rem auto;
+  padding: 0 1rem;
+  flex: 1;
+}
+
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+}
+
+.section-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* Feedback Form */
+.form-card {
+  margin-bottom: 1.75rem;
+}
+
+.form-card .section-title {
+  margin-bottom: 1rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 0.35rem;
+  color: var(--text-main);
+}
+
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.label-row label {
+  margin-bottom: 0;
+}
+
+.char-counter {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.char-counter.near-limit {
+  color: var(--bsu-red);
+}
+
+input[type="text"],
+textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: 0.98rem;
+  color: var(--text-main);
+  background-color: #ffffff;
+  border: 1px solid #cccccc;
+  border-radius: 6px;
+  padding: 0.65rem 0.75rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+input[type="text"]:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--bsu-red);
+  box-shadow: 0 0 0 3px rgba(211, 47, 47, 0.15);
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-primary {
+  background-color: var(--bsu-red);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.7rem 1.35rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--bsu-red-dark);
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.form-error {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--bsu-red-light);
+  border: 1px solid var(--bsu-red-border);
+  border-radius: 6px;
+  color: var(--bsu-red-dark);
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+/* Posts Wall */
+.wall-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.total-badge {
+  background-color: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.total-badge strong {
+  color: var(--bsu-red);
+}
+
+.posts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.post-card {
+  border-left: 4px solid var(--bsu-red);
+  padding: 1.15rem 1.25rem;
+}
+
+.post-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.post-author {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 1rem;
+}
+
+.post-date {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.post-message {
+  color: var(--text-main);
+  font-size: 0.97rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 2rem 1rem;
+}
+
+/* Footer */
+.site-footer {
+  text-align: center;
+  padding: 1.25rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 600px) {
+  .site-header {
+    padding: 1.25rem 1rem;
+  }
+
+  .site-header h1 {
+    font-size: 1.55rem;
+  }
+
+  .card {
+    padding: 1.1rem;
+  }
+
+  .btn-primary {
+    width: 100%;
+  }
+
+  .wall-header {
+    flex-wrap: wrap;
+  }
+}
