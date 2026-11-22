@@ -7,8 +7,10 @@ const nameInput = document.getElementById('name-input');
 const messageInput = document.getElementById('message-input');
 const charCounter = document.getElementById('char-counter');
 const submitBtn = document.getElementById('submit-btn');
+const submitBtnLabel = submitBtn.querySelector('.btn-label');
 const formError = document.getElementById('form-error');
 const totalPostsEl = document.getElementById('total-posts');
+const headerTotalPostsEl = document.getElementById('header-total-posts');
 const postsList = document.getElementById('posts-list');
 
 /**
@@ -25,6 +27,24 @@ function escapeHtml(text) {
     "'": '&#39;',
   };
   return str.replace(/[&<>"']/g, (char) => replacements[char]);
+}
+
+/**
+ * Extracts up to two uppercase initials from a poster's name for the avatar badge.
+ */
+function getInitials(name) {
+  const parts = String(name ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return '?';
+  }
+  if (parts.length === 1) {
+    return parts[0].charAt(0).toUpperCase();
+  }
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
 
 /**
@@ -45,12 +65,13 @@ function formatDate(isoString) {
 }
 
 /**
- * Updates the live character counter below/above the message textarea.
+ * Updates the live character counter and applies warning highlights near the 280-char limit.
  */
 function updateCharCounter() {
   const length = messageInput.value.length;
   charCounter.textContent = `${length} / ${MAX_MESSAGE_LENGTH}`;
-  charCounter.classList.toggle('near-limit', length >= 250);
+  charCounter.classList.toggle('near-limit', length >= 240 && length < 270);
+  charCounter.classList.toggle('at-limit', length >= 270);
 }
 
 /**
@@ -70,30 +91,40 @@ function clearError() {
 }
 
 /**
- * Renders the list of feedback posts and updates the total post count.
+ * Renders the list of feedback posts and updates both Total posts counters.
  */
 function renderPosts(items) {
-  totalPostsEl.textContent = String(items.length);
+  const countText = String(items.length);
+  totalPostsEl.textContent = countText;
+  if (headerTotalPostsEl) {
+    headerTotalPostsEl.textContent = countText;
+  }
 
   if (items.length === 0) {
     postsList.innerHTML =
-      '<div class="card empty-state">No feedback posted yet. Be the first to leave a message!</div>';
+      '<div class="empty-state">No feedback posted yet. Be the first to leave a message!</div>';
     return;
   }
 
   const cardsHtml = items
     .map((item) => {
       const safeName = escapeHtml(item.name);
+      const safeInitials = escapeHtml(getInitials(item.name));
       const safeMessage = escapeHtml(item.message);
       const formattedDate = escapeHtml(formatDate(item.created_at));
+      const safeIsoDate = escapeHtml(item.created_at);
 
       return `
-        <article class="card post-card">
-          <div class="post-meta">
-            <span class="post-author">${safeName}</span>
-            <time class="post-date" datetime="${escapeHtml(item.created_at)}">${formattedDate}</time>
+        <article class="post-card">
+          <div class="post-avatar" aria-hidden="true">${safeInitials}</div>
+          <div class="post-body">
+            <div class="post-meta">
+              <span class="post-author">${safeName}</span>
+              <span class="meta-dot" aria-hidden="true">&middot;</span>
+              <time class="post-date" datetime="${safeIsoDate}">${formattedDate}</time>
+            </div>
+            <p class="post-message">${safeMessage}</p>
           </div>
-          <p class="post-message">${safeMessage}</p>
         </article>
       `;
     })
@@ -112,7 +143,7 @@ async function loadPosts() {
 
     if (!response.ok || !Array.isArray(data)) {
       const errorMsg = (data && data.error) || 'Could not load feedback messages.';
-      postsList.innerHTML = `<div class="card empty-state">${escapeHtml(errorMsg)}</div>`;
+      postsList.innerHTML = `<div class="empty-state">${escapeHtml(errorMsg)}</div>`;
       return;
     }
 
@@ -120,7 +151,7 @@ async function loadPosts() {
   } catch (err) {
     console.error('Failed to fetch posts:', err);
     postsList.innerHTML =
-      '<div class="card empty-state">Unable to connect to the server. Please refresh the page.</div>';
+      '<div class="empty-state">Unable to connect to the server. Please refresh the page.</div>';
   }
 }
 
@@ -138,7 +169,9 @@ async function handleFormSubmit(event) {
 
   // Prevent duplicate submissions while waiting for the server response
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Posting...';
+  if (submitBtnLabel) {
+    submitBtnLabel.textContent = 'Posting...';
+  }
 
   try {
     const response = await fetch('/api/items', {
@@ -164,7 +197,9 @@ async function handleFormSubmit(event) {
     showError('Network error while posting feedback. Please try again.');
   } finally {
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Post Feedback';
+    if (submitBtnLabel) {
+      submitBtnLabel.textContent = 'Post Feedback';
+    }
   }
 }
 

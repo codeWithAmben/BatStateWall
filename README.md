@@ -15,15 +15,18 @@ A full-stack public feedback wall built for **IT 412 Platform Technologies** at 
 ```text
 BatStateWall/
 ├── public/
-│   ├── index.html      # Main feedback wall page
-│   ├── style.css       # BatStateU red & white responsive styling
-│   └── app.js          # Frontend API calls, live counter, XSS-safe rendering
-├── server.js           # Express server, PostgreSQL pool, and REST API endpoints
-├── schema.sql          # SQL script to create the "items" table in Supabase
-├── package.json        # Dependencies and "start" script
-├── .env.example        # Sample environment variables template
-├── .gitignore          # Excludes node_modules/ and .env from Git
-└── README.md           # Project documentation
+│   ├── assets/
+│   │   ├── spartan-bg.png  # Left backdrop artwork
+│   │   └── campus-bg.png   # Right backdrop artwork
+│   ├── index.html          # Main feedback wall page
+│   ├── style.css           # Dark obsidian & BatStateU crimson glassmorphic styling
+│   └── app.js              # Frontend API calls, live counter, XSS-safe rendering
+├── server.js               # Express server, PostgreSQL pool, and REST API endpoints
+├── schema.sql              # SQL script to create the "items" table in Supabase
+├── package.json            # Dependencies and "start" script
+├── .env.example            # Sample environment variables template
+├── .gitignore              # Excludes node_modules/ and .env from Git
+└── README.md               # Project documentation
 ```
 
 ---
