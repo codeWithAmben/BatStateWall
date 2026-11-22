@@ -1113,6 +1113,15 @@ body {
   cursor: not-allowed;
 }
 
+.comment-error {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(229, 57, 53, 0.14);
+  border: 1px solid rgba(229, 57, 53, 0.42);
+  color: #fecaca;
+  font-size: 0.82rem;
+}
+
 .load-more-wrap {
   margin-top: 4px;
 }

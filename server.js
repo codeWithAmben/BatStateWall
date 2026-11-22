@@ -5,6 +5,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
+const { containsProfanity } = require('./profanityFilter');
 
 const app = express();
 
@@ -409,6 +410,9 @@ app.post('/api/auth/register', async (req, res) => {
   if (trimmedName.length < 2 || trimmedName.length > MAX_NAME_LENGTH) {
     return res.status(400).json({ error: 'Name must be between 2 and 80 characters.' });
   }
+  if (containsProfanity(trimmedName)) {
+    return res.status(400).json({ error: 'Please choose a respectful display name without profanity.' });
+  }
   if (!EMAIL_REGEX.test(normalizedEmail)) {
     return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
@@ -731,6 +735,12 @@ app.post('/api/items', requireAuth, async (req, res) => {
   if (trimmedMessage.length > MAX_MESSAGE_LENGTH) {
     return res.status(400).json({ error: 'Message must be 280 characters or fewer.' });
   }
+  if (containsProfanity(trimmedName)) {
+    return res.status(400).json({ error: 'Please use a respectful name without profanity.' });
+  }
+  if (containsProfanity(trimmedMessage)) {
+    return res.status(400).json({ error: 'Please keep your post respectful. Profanity is not allowed.' });
+  }
 
   try {
     const query = `
@@ -914,6 +924,9 @@ app.post('/api/items/:id/comments', requireAuth, async (req, res) => {
   }
   if (trimmedBody.length > MAX_MESSAGE_LENGTH) {
     return res.status(400).json({ error: 'Comment must be 280 characters or fewer.' });
+  }
+  if (containsProfanity(trimmedBody)) {
+    return res.status(400).json({ error: 'Please keep your comment respectful. Profanity is not allowed.' });
   }
 
   try {

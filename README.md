@@ -24,7 +24,8 @@ BatStateWall/
 │   ├── scene3d.js             # Three.js WebGL 3D background & card tilt/spotlight
 │   └── app.js                 # Frontend API calls, live counter, XSS-safe rendering
 ├── server.js               # Express server, PostgreSQL pool, and REST API endpoints
-├── schema.sql              # SQL script to create the "items" table in Supabase
+├── profanityFilter.js      # English & Tagalog profanity filter for names, posts, and comments
+├── schema.sql              # SQL script to create all required tables in Supabase
 ├── package.json            # Dependencies and "start" script
 ├── .env.example            # Sample environment variables template
 ├── .gitignore              # Excludes node_modules/ and .env from Git
@@ -232,6 +233,14 @@ Base URL (local): `http://localhost:3000`
   "error": "Message must be 280 characters or fewer."
 }
 ```
+
+```json
+{
+  "error": "Please keep your post respectful. Profanity is not allowed."
+}
+```
+
+*(English and Tagalog profanity filtering is enforced on display names, posts, and comments.)*
 
 - **Database Error Response (`500 Internal Server Error`):**
 

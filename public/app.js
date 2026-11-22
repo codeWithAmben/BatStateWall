@@ -654,6 +654,7 @@ function renderPostCardHtml(item) {
           />
           <button type="submit" class="comment-send-btn">Post</button>
         </form>
+        <div class="comment-error" role="alert" hidden></div>
       </div>
     </article>
   `;
@@ -883,9 +884,15 @@ async function handleSubmitComment(postId, formEl) {
   }
   const input = formEl.querySelector('.comment-input');
   const sendBtn = formEl.querySelector('.comment-send-btn');
+  const errorEl = formEl.parentElement?.querySelector('.comment-error');
   const body = input.value.trim();
   if (!body) {
     return;
+  }
+
+  if (errorEl) {
+    errorEl.textContent = '';
+    errorEl.hidden = true;
   }
 
   sendBtn.disabled = true;
@@ -905,7 +912,14 @@ async function handleSubmitComment(postId, formEl) {
 
     const data = await response.json().catch(() => null);
     if (!response.ok || !data) {
-      showSuccessToast('Comment not posted', (data && data.error) || 'Please try again.');
+      const errMsg = (data && data.error) || 'Could not post comment. Please try again.';
+      if (errorEl) {
+        errorEl.textContent = errMsg;
+        errorEl.hidden = false;
+      } else {
+        showSuccessToast('Comment not posted', errMsg);
+      }
+      window.BatStateScene?.pulseError();
       return;
     }
 
