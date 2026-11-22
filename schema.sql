@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT,
   google_id TEXT UNIQUE,
   avatar_url TEXT,
-  auth_provider TEXT NOT NULL DEFAULT 'local',
+  auth_provider TEXT NOT NULL DEFAULT 'google',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

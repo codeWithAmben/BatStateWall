@@ -20,10 +20,7 @@ const PG_MAX_INT = 2147483647; // Maximum value for PostgreSQL 32-bit SERIAL/INT
 const SESSION_COOKIE = 'batstatewall_session';
 const OAUTH_STATE_COOKIE = 'batstatewall_oauth_state';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const MIN_PASSWORD_LENGTH = 8;
-const MAX_PASSWORD_LENGTH = 128;
 const MAX_NAME_LENGTH = 80;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Derive a deterministic fallback secret for local dev if SESSION_SECRET is unset
 const SESSION_SECRET =
@@ -80,7 +77,7 @@ async function ensureSchema() {
         password_hash TEXT,
         google_id TEXT UNIQUE,
         avatar_url TEXT,
-        auth_provider TEXT NOT NULL DEFAULT 'local',
+        auth_provider TEXT NOT NULL DEFAULT 'google',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
@@ -133,42 +130,6 @@ async function ensureSchema() {
   } catch (err) {
     console.error('Warning: Automatic schema check failed:', err.message);
   }
-}
-
-/**
- * Wraps Node's built-in crypto.scrypt in a Promise for clean async/await password hashing.
- */
-function scryptAsync(password, salt) {
-  return new Promise((resolve, reject) => {
-    crypto.scrypt(password, salt, 64, (err, derivedKey) => {
-      if (err) {
-        return reject(err);
-      }
-      return resolve(derivedKey);
-    });
-  });
-}
-
-async function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const derivedKey = await scryptAsync(password, salt);
-  return `${salt}:${derivedKey.toString('hex')}`;
-}
-
-async function verifyPassword(password, storedHash) {
-  if (typeof storedHash !== 'string' || !storedHash.includes(':')) {
-    return false;
-  }
-  const [salt, expectedHex] = storedHash.split(':');
-  if (!salt || !expectedHex) {
-    return false;
-  }
-  const derivedKey = await scryptAsync(password, salt);
-  const expectedBuffer = Buffer.from(expectedHex, 'hex');
-  if (derivedKey.length !== expectedBuffer.length) {
-    return false;
-  }
-  return crypto.timingSafeEqual(derivedKey, expectedBuffer);
 }
 
 /**
@@ -393,105 +354,6 @@ app.get('/api/auth/me', async (req, res) => {
   } catch (err) {
     console.error('Error fetching current user:', err);
     return res.status(500).json({ error: 'Failed to load user session.' });
-  }
-});
-
-// POST /api/auth/register - Create a new account with name, email, and password
-app.post('/api/auth/register', async (req, res) => {
-  const { name, email, password } = req.body || {};
-
-  const trimmedName = typeof name === 'string' ? name.trim() : '';
-  const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
-  const rawPassword = typeof password === 'string' ? password : '';
-
-  if (!trimmedName && !normalizedEmail && !rawPassword) {
-    return res.status(400).json({ error: 'Name, email, and password are required.' });
-  }
-  if (trimmedName.length < 2 || trimmedName.length > MAX_NAME_LENGTH) {
-    return res.status(400).json({ error: 'Name must be between 2 and 80 characters.' });
-  }
-  if (containsProfanity(trimmedName)) {
-    return res.status(400).json({ error: 'Please choose a respectful display name without profanity.' });
-  }
-  if (!EMAIL_REGEX.test(normalizedEmail)) {
-    return res.status(400).json({ error: 'Please enter a valid email address.' });
-  }
-  if (rawPassword.length < MIN_PASSWORD_LENGTH || rawPassword.length > MAX_PASSWORD_LENGTH) {
-    return res.status(400).json({ error: 'Password must be between 8 and 128 characters.' });
-  }
-
-  try {
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ error: 'An account with this email already exists.' });
-    }
-
-    const passwordHash = await hashPassword(rawPassword);
-    const result = await pool.query(
-      `INSERT INTO users (name, email, password_hash, auth_provider)
-       VALUES ($1, $2, $3, 'local')
-       RETURNING id, name, email, avatar_url, auth_provider`,
-      [trimmedName, normalizedEmail, passwordHash]
-    );
-
-    const user = result.rows[0];
-    setCookie(res, req, SESSION_COOKIE, signSessionToken(user.id), Math.floor(SESSION_TTL_MS / 1000));
-    return res.status(201).json({ user });
-  } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'An account with this email already exists.' });
-    }
-    console.error('Error registering user:', err);
-    return res.status(500).json({ error: 'Failed to create account. Please try again later.' });
-  }
-});
-
-// POST /api/auth/login - Authenticate with email and password
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body || {};
-
-  const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
-  const rawPassword = typeof password === 'string' ? password : '';
-
-  if (!normalizedEmail || !rawPassword) {
-    return res.status(400).json({ error: 'Email and password are required.' });
-  }
-
-  try {
-    const result = await pool.query(
-      'SELECT id, name, email, password_hash, avatar_url, auth_provider FROM users WHERE email = $1',
-      [normalizedEmail]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    const userRow = result.rows[0];
-    if (!userRow.password_hash) {
-      return res.status(401).json({
-        error: 'This account uses Google sign-in. Please continue with Google.',
-      });
-    }
-
-    const passwordMatches = await verifyPassword(rawPassword, userRow.password_hash);
-    if (!passwordMatches) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
-
-    const user = {
-      id: userRow.id,
-      name: userRow.name,
-      email: userRow.email,
-      avatar_url: userRow.avatar_url,
-      auth_provider: userRow.auth_provider,
-    };
-
-    setCookie(res, req, SESSION_COOKIE, signSessionToken(user.id), Math.floor(SESSION_TTL_MS / 1000));
-    return res.status(200).json({ user });
-  } catch (err) {
-    console.error('Error logging in:', err);
-    return res.status(500).json({ error: 'Failed to log in. Please try again later.' });
   }
 });
 

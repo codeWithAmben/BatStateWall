@@ -129,17 +129,15 @@ flowchart LR
 
 Base URL (local): `http://localhost:3000`
 
-### Authentication Endpoints
+### Authentication Endpoints (Google OAuth Only)
 
 | Method & Route | Description | Status Codes |
 |---|---|---|
 | `GET /api/auth/config` | Returns `{ googleEnabled }` so the UI knows if Google OAuth is configured | `200` |
 | `GET /api/auth/me` | Returns `{ user }` for the signed-in cookie, or `{ user: null }` | `200`, `500` |
-| `POST /api/auth/register` | Creates an account (`{ name, email, password }`), hashes password with `scrypt`, sets HTTP-only session cookie | `201`, `400`, `409`, `500` |
-| `POST /api/auth/login` | Logs in with `{ email, password }` and sets HTTP-only session cookie | `200`, `400`, `401`, `500` |
+| `GET /api/auth/google` | Redirects to Google OAuth 2.0 (Gmail) consent screen (creates account automatically on first sign-in) | `302`, `503` (JSON if unconfigured) |
+| `GET /api/auth/google/callback` | Handles Google OAuth callback, creates/links user, sets HTTP-only `batstatewall_session` cookie, redirects to `/` | `302` |
 | `POST /api/auth/logout` | Clears the session cookie | `200` |
-| `GET /api/auth/google` | Redirects to Google OAuth 2.0 (Gmail) consent screen | `302`, `503` (JSON if unconfigured) |
-| `GET /api/auth/google/callback` | Handles Google OAuth callback, creates/links user, sets session cookie, redirects to `/` | `302` |
 
 ### 1. Get All Feedback Items
 
@@ -314,20 +312,19 @@ Base URL (local): `http://localhost:3000`
 
 ## Testing with Postman
 
-Postman automatically stores cookies returned by `/api/auth/register` and `/api/auth/login` for subsequent requests to the same domain:
+Sign in with Google once in your browser, copy the `batstatewall_session` cookie value from DevTools (**Application → Cookies**), and include it as a `Cookie: batstatewall_session=<value>` header in Postman for protected write requests:
 
 | # | Test Case | Method & URL | Body (JSON) | Expected Status | Expected Result |
 |---|-----------|--------------|-------------|-----------------|-----------------|
-| 1 | Reject unauthenticated post | `POST /api/items` *(before login)* | `{"name": "Juan", "message": "Hello"}` | `401 Unauthorized` | Returns `{"error": "Please log in to continue."}` |
-| 2 | Create a new user account | `POST /api/auth/register` | `{"name": "Juan Dela Cruz", "email": "juan@example.com", "password": "Password123"}` | `201 Created` | Returns `{ user }` and sets `batstatewall_session` cookie |
-| 3 | Log in with existing account | `POST /api/auth/login` | `{"email": "juan@example.com", "password": "Password123"}` | `200 OK` | Returns `{ user }` and refreshes session cookie |
-| 4 | Create valid feedback post | `POST /api/items` *(while logged in)* | `{"name": "  Juan Dela Cruz  ", "message": "  Go Red Spartans!  "}` | `201 Created` | Returns created item with trimmed `name` and `message`, generated `id`, and social counts |
-| 5 | Fetch all feedback posts | `GET /api/items` | *(none)* | `200 OK` | Returns JSON array of items ordered newest first |
-| 6 | Fetch existing post by ID | `GET /api/items/1` | *(none)* | `200 OK` | Returns the matching item object for `id: 1` |
-| 7 | Toggle like on post | `POST /api/items/1/like` *(while logged in)* | *(none)* | `200 OK` | Returns `{ post_id, liked, like_count }` |
-| 8 | Add comment to post | `POST /api/items/1/comments` *(while logged in)* | `{"body": "Great feedback!"}` | `201 Created` | Returns created comment object |
-| 9 | Reject missing/empty name | `POST /api/items` *(while logged in)* | `{"name": "   ", "message": "Hello BatStateU"}` | `400 Bad Request` | Returns `{"error": "Name is required."}` |
-| 10 | Reject missing/empty message | `POST /api/items` *(while logged in)* | `{"name": "Juan", "message": ""}` | `400 Bad Request` | Returns `{"error": "Message is required."}` |
-| 11 | Reject message over 280 characters | `POST /api/items` *(while logged in)* | `{"name": "Juan", "message": "<281+ character string>"}` | `400 Bad Request` | Returns `{"error": "Message must be 280 characters or fewer."}` |
-| 12 | Reject non-numeric item ID | `GET /api/items/abc` | *(none)* | `400 Bad Request` | Returns `{"error": "Invalid ID. ID must be a number."}` |
-| 13 | Handle non-existent item ID | `GET /api/items/999999` | *(none)* | `404 Not Found` | Returns `{"error": "Item not found."}` |
+| 1 | Reject unauthenticated post | `POST /api/items` *(without cookie)* | `{"name": "Juan", "message": "Hello"}` | `401 Unauthorized` | Returns `{"error": "Please log in to continue."}` |
+| 2 | Check auth status | `GET /api/auth/me` | *(none)* | `200 OK` | Returns `{ user }` when signed in or `{ user: null }` when logged out |
+| 3 | Create valid feedback post | `POST /api/items` *(with session cookie)* | `{"name": "  Juan Dela Cruz  ", "message": "  Go Red Spartans!  "}` | `201 Created` | Returns created item with trimmed `name` and `message`, generated `id`, and social counts |
+| 4 | Fetch all feedback posts | `GET /api/items` | *(none)* | `200 OK` | Returns JSON array of items ordered newest first |
+| 5 | Fetch existing post by ID | `GET /api/items/1` | *(none)* | `200 OK` | Returns the matching item object for `id: 1` |
+| 6 | Toggle like on post | `POST /api/items/1/like` *(with session cookie)* | *(none)* | `200 OK` | Returns `{ post_id, liked, like_count }` |
+| 7 | Add comment to post | `POST /api/items/1/comments` *(with session cookie)* | `{"body": "Great feedback!"}` | `201 Created` | Returns created comment object |
+| 8 | Reject missing/empty name | `POST /api/items` *(with session cookie)* | `{"name": "   ", "message": "Hello BatStateU"}` | `400 Bad Request` | Returns `{"error": "Name is required."}` |
+| 9 | Reject missing/empty message | `POST /api/items` *(with session cookie)* | `{"name": "Juan", "message": ""}` | `400 Bad Request` | Returns `{"error": "Message is required."}` |
+| 10 | Reject message over 280 characters | `POST /api/items` *(with session cookie)* | `{"name": "Juan", "message": "<281+ character string>"}` | `400 Bad Request` | Returns `{"error": "Message must be 280 characters or fewer."}` |
+| 11 | Reject non-numeric item ID | `GET /api/items/abc` | *(none)* | `400 Bad Request` | Returns `{"error": "Invalid ID. ID must be a number."}` |
+| 12 | Handle non-existent item ID | `GET /api/items/999999` | *(none)* | `404 Not Found` | Returns `{"error": "Item not found."}` |

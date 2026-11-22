@@ -19,8 +19,7 @@ const dropdownUserName = document.getElementById('dropdown-user-name');
 const dropdownUserEmail = document.getElementById('dropdown-user-email');
 const dropdownUserGoogle = document.getElementById('dropdown-user-google');
 const menuMyPostsBtn = document.getElementById('menu-my-posts');
-const openLoginBtn = document.getElementById('open-login-btn');
-const openRegisterBtn = document.getElementById('open-register-btn');
+const headerGoogleBtn = document.getElementById('header-google-btn');
 const logoutBtn = document.getElementById('logout-btn');
 
 // Composer strip & modal elements
@@ -62,23 +61,11 @@ const mobileStatToday = document.getElementById('mobile-stat-today');
 const infoModal = document.getElementById('info-modal');
 const closeInfoModalBtn = document.getElementById('close-info-modal');
 
-// Auth modal elements
+// Auth modal elements (Google OAuth only)
 const authModal = document.getElementById('auth-modal');
 const closeAuthModalBtn = document.getElementById('close-auth-modal');
-const authModalTitle = document.getElementById('auth-modal-title');
 const authModalSubtitle = document.getElementById('auth-modal-subtitle');
-const tabLogin = document.getElementById('tab-login');
-const tabRegister = document.getElementById('tab-register');
 const modalGoogleBtn = document.getElementById('modal-google-btn');
-const loginForm = document.getElementById('login-form');
-const loginEmailInput = document.getElementById('login-email');
-const loginPasswordInput = document.getElementById('login-password');
-const loginSubmitBtn = document.getElementById('login-submit-btn');
-const registerForm = document.getElementById('register-form');
-const registerNameInput = document.getElementById('register-name');
-const registerEmailInput = document.getElementById('register-email');
-const registerPasswordInput = document.getElementById('register-password');
-const registerSubmitBtn = document.getElementById('register-submit-btn');
 const authErrorEl = document.getElementById('auth-error');
 
 // Toast elements
@@ -90,7 +77,6 @@ const toastSubtitleEl = document.getElementById('toast-subtitle');
 // Client application state
 let currentUser = null;
 let googleEnabled = false;
-let authMode = 'login';
 let posts = [];
 let hasMorePosts = false;
 let knownLatestId = 0;
@@ -98,7 +84,6 @@ let highlightedPostId = null;
 let lottieSuccessAnim = null;
 let toastHideTimer = null;
 let searchDebounceTimer = null;
-let pendingAfterLogin = null;
 const commentsCache = new Map();
 
 const feedState = {
@@ -320,7 +305,7 @@ function updateAuthUI() {
 
     composerAvatar.dataset.tone = 'guest';
     composerAvatar.textContent = '?';
-    composerTrigger.textContent = 'Log in to share your feedback...';
+    composerTrigger.textContent = 'Sign in with Google to share your feedback...';
   }
 }
 
@@ -349,8 +334,7 @@ function updateComposerState() {
 
 function openComposerModal() {
   if (!currentUser) {
-    pendingAfterLogin = () => openComposerModal();
-    openAuthModal('login');
+    openAuthModal('Sign in with Google to share your feedback.');
     return;
   }
   closeAllMenus();
@@ -380,39 +364,21 @@ function closeInfoModal() {
   syncBodyScrollLock();
 }
 
-function setAuthMode(mode) {
-  authMode = mode === 'register' ? 'register' : 'login';
+const DEFAULT_AUTH_SUBTITLE = 'Log in or create your account with your Google / Gmail account.';
+
+function openAuthModal(subtitle) {
+  closeAllMenus();
   authErrorEl.textContent = '';
   authErrorEl.hidden = true;
-
-  const isRegister = authMode === 'register';
-  tabLogin.classList.toggle('is-active', !isRegister);
-  tabRegister.classList.toggle('is-active', isRegister);
-  tabLogin.setAttribute('aria-selected', String(!isRegister));
-  tabRegister.setAttribute('aria-selected', String(isRegister));
-
-  loginForm.hidden = isRegister;
-  registerForm.hidden = !isRegister;
-
-  if (isRegister) {
-    authModalTitle.textContent = 'Create Your Account';
-    authModalSubtitle.textContent = 'Join BatStateWall or sign in instantly with Gmail';
-  } else {
-    authModalTitle.textContent = 'Welcome Back';
-    authModalSubtitle.textContent = 'Sign in to share feedback on BatStateWall';
+  if (authModalSubtitle) {
+    authModalSubtitle.textContent =
+      typeof subtitle === 'string' && subtitle && subtitle !== 'login'
+        ? subtitle
+        : DEFAULT_AUTH_SUBTITLE;
   }
-}
-
-function openAuthModal(mode = 'login') {
-  closeAllMenus();
-  setAuthMode(mode);
   authModal.hidden = false;
   syncBodyScrollLock();
-  if (mode === 'register') {
-    registerNameInput.focus();
-  } else {
-    loginEmailInput.focus();
-  }
+  modalGoogleBtn?.focus();
 }
 
 function closeAuthModal() {
@@ -426,7 +392,7 @@ function handleGoogleClick(event) {
   if (!googleEnabled) {
     event.preventDefault();
     if (authModal.hidden) {
-      openAuthModal('login');
+      openAuthModal();
     }
     authErrorEl.textContent =
       'Google login is not configured on this server yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env or Render.';
@@ -790,7 +756,7 @@ async function fetchFeed({ append = false } = {}) {
 
 async function handleToggleLike(postId, buttonEl) {
   if (!currentUser) {
-    openAuthModal('login');
+    openAuthModal();
     return;
   }
   const post = posts.find((p) => p.id === postId);
@@ -815,7 +781,7 @@ async function handleToggleLike(postId, buttonEl) {
     if (response.status === 401) {
       currentUser = null;
       updateAuthUI();
-      openAuthModal('login');
+      openAuthModal();
       return;
     }
     const data = await response.json().catch(() => null);
@@ -879,7 +845,7 @@ async function handleToggleComments(postId) {
 
 async function handleSubmitComment(postId, formEl) {
   if (!currentUser) {
-    openAuthModal('login');
+    openAuthModal();
     return;
   }
   const input = formEl.querySelector('.comment-input');
@@ -906,7 +872,7 @@ async function handleSubmitComment(postId, formEl) {
     if (response.status === 401) {
       currentUser = null;
       updateAuthUI();
-      openAuthModal('login');
+      openAuthModal();
       return;
     }
 
@@ -964,7 +930,7 @@ async function handleSharePost(postId, useNativeShare = true) {
 async function handleReportPost(postId) {
   closeAllMenus();
   if (!currentUser) {
-    openAuthModal('login');
+    openAuthModal();
     return;
   }
 
@@ -978,7 +944,7 @@ async function handleReportPost(postId) {
     if (response.status === 401) {
       currentUser = null;
       updateAuthUI();
-      openAuthModal('login');
+      openAuthModal();
       return;
     }
     if (!response.ok) {
@@ -1006,7 +972,7 @@ async function handleDeletePost(postId, btnEl) {
     if (response.status === 401) {
       currentUser = null;
       updateAuthUI();
-      openAuthModal('login');
+      openAuthModal();
       return;
     }
     const data = await response.json().catch(() => ({}));
@@ -1069,117 +1035,6 @@ async function loadAuthState() {
   }
 }
 
-async function handleLoginSubmit(event) {
-  event.preventDefault();
-  authErrorEl.hidden = true;
-
-  const btnLabel = loginSubmitBtn.querySelector('.btn-label');
-  loginSubmitBtn.disabled = true;
-  if (btnLabel) {
-    btnLabel.textContent = 'Logging in...';
-  }
-
-  try {
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: loginEmailInput.value,
-        password: loginPasswordInput.value,
-      }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      authErrorEl.textContent = data.error || 'Could not log in. Please try again.';
-      authErrorEl.hidden = false;
-      window.BatStateScene?.pulseError();
-      return;
-    }
-
-    currentUser = data.user;
-    loginForm.reset();
-    closeAuthModal();
-    updateAuthUI();
-    window.BatStateScene?.pulseSuccess();
-    showSuccessToast('Welcome back!', `Signed in as ${currentUser.name}`);
-
-    await Promise.all([fetchFeed(), loadStats()]);
-
-    if (typeof pendingAfterLogin === 'function') {
-      const nextAction = pendingAfterLogin;
-      pendingAfterLogin = null;
-      nextAction();
-    }
-  } catch (err) {
-    console.error('Login failed:', err);
-    authErrorEl.textContent = 'Network error while logging in. Please try again.';
-    authErrorEl.hidden = false;
-    window.BatStateScene?.pulseError();
-  } finally {
-    loginSubmitBtn.disabled = false;
-    if (btnLabel) {
-      btnLabel.textContent = 'Log In';
-    }
-  }
-}
-
-async function handleRegisterSubmit(event) {
-  event.preventDefault();
-  authErrorEl.hidden = true;
-
-  const btnLabel = registerSubmitBtn.querySelector('.btn-label');
-  registerSubmitBtn.disabled = true;
-  if (btnLabel) {
-    btnLabel.textContent = 'Creating account...';
-  }
-
-  try {
-    const response = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: registerNameInput.value,
-        email: registerEmailInput.value,
-        password: registerPasswordInput.value,
-      }),
-    });
-
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      authErrorEl.textContent = data.error || 'Could not create account. Please try again.';
-      authErrorEl.hidden = false;
-      window.BatStateScene?.pulseError();
-      return;
-    }
-
-    currentUser = data.user;
-    registerForm.reset();
-    closeAuthModal();
-    updateAuthUI();
-    window.BatStateScene?.pulseSuccess();
-    showSuccessToast('Account created!', `Welcome to BatStateWall, ${currentUser.name}`);
-
-    await Promise.all([fetchFeed(), loadStats()]);
-
-    if (typeof pendingAfterLogin === 'function') {
-      const nextAction = pendingAfterLogin;
-      pendingAfterLogin = null;
-      nextAction();
-    }
-  } catch (err) {
-    console.error('Registration failed:', err);
-    authErrorEl.textContent = 'Network error while creating account. Please try again.';
-    authErrorEl.hidden = false;
-    window.BatStateScene?.pulseError();
-  } finally {
-    registerSubmitBtn.disabled = false;
-    if (btnLabel) {
-      btnLabel.textContent = 'Create Account';
-    }
-  }
-}
-
 async function handleLogout() {
   closeAllMenus();
   try {
@@ -1204,7 +1059,7 @@ async function handleFormSubmit(event) {
   event.preventDefault();
   if (!currentUser) {
     closeComposerModal();
-    openAuthModal('login');
+    openAuthModal();
     return;
   }
 
@@ -1264,7 +1119,7 @@ async function handleFormSubmit(event) {
       renderPosts();
       currentUser = null;
       updateAuthUI();
-      openAuthModal('login');
+      openAuthModal();
       return;
     }
 
@@ -1311,8 +1166,7 @@ async function handleFormSubmit(event) {
 /* ==================== Event Wiring ==================== */
 
 // Header & Profile Dropdown
-openLoginBtn?.addEventListener('click', () => openAuthModal('login'));
-openRegisterBtn?.addEventListener('click', () => openAuthModal('register'));
+headerGoogleBtn?.addEventListener('click', handleGoogleClick);
 modalGoogleBtn?.addEventListener('click', handleGoogleClick);
 logoutBtn?.addEventListener('click', handleLogout);
 
@@ -1356,25 +1210,6 @@ authModal?.addEventListener('click', (event) => {
   }
 });
 
-tabLogin?.addEventListener('click', () => setAuthMode('login'));
-tabRegister?.addEventListener('click', () => setAuthMode('register'));
-
-document.querySelectorAll('.btn-toggle-pass').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const targetId = btn.dataset.target;
-    const input = targetId ? document.getElementById(targetId) : null;
-    if (!input) {
-      return;
-    }
-    const show = input.type === 'password';
-    input.type = show ? 'text' : 'password';
-    btn.textContent = show ? 'Hide' : 'Show';
-    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-  });
-});
-
-loginForm?.addEventListener('submit', handleLoginSubmit);
-registerForm?.addEventListener('submit', handleRegisterSubmit);
 feedbackForm?.addEventListener('submit', handleFormSubmit);
 
 messageInput?.addEventListener('input', () => {
@@ -1418,13 +1253,7 @@ filterAllBtn?.addEventListener('click', () => {
 
 filterMineBtn?.addEventListener('click', () => {
   if (!currentUser) {
-    pendingAfterLogin = () => {
-      feedState.filter = 'mine';
-      filterMineBtn.classList.add('is-active');
-      filterAllBtn.classList.remove('is-active');
-      fetchFeed();
-    };
-    openAuthModal('login');
+    openAuthModal('Sign in with Google to view your posts.');
     return;
   }
   if (feedState.filter === 'mine') {

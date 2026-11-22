@@ -104,8 +104,27 @@
 
           <div id="auth-controls" class="auth-controls">
             <div id="auth-guest-actions" class="auth-guest-actions">
-              <button type="button" id="open-login-btn" class="btn-ghost btn-sm">Log In</button>
-              <button type="button" id="open-register-btn" class="btn-primary btn-sm">Create Account</button>
+              <a id="header-google-btn" class="btn-google btn-google-sm" href="/api/auth/google">
+                <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.04c1.64 0 3.12.56 4.28 1.67l3.2-3.2C17.54 1.69 14.95.6 12 .6 7.42.6 3.46 3.22 1.54 7.04l3.73 2.9C6.15 7.12 8.83 5.04 12 5.04z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M23.49 12.27c0-.79-.07-1.55-.2-2.27H12v4.3h6.45c-.28 1.49-1.12 2.75-2.38 3.6l3.69 2.86c2.16-1.99 3.73-4.92 3.73-8.49z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.27 14.06a6.94 6.94 0 0 1 0-4.12l-3.73-2.9a11.39 11.39 0 0 0 0 9.92l3.73-2.9z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23.4c2.95 0 5.44-.98 7.25-2.64l-3.69-2.86c-.98.66-2.23 1.06-3.56 1.06-3.17 0-5.85-2.08-6.73-4.9l-3.73 2.9C3.46 20.78 7.42 23.4 12 23.4z"
+                  />
+                </svg>
+                <span>Sign in with Google</span>
+              </a>
             </div>
 
             <div id="auth-user-menu" class="profile-menu-wrap" hidden>
@@ -161,7 +180,7 @@
           <div class="composer-row">
             <div id="composer-avatar" class="composer-avatar" aria-hidden="true">?</div>
             <button type="button" id="composer-trigger" class="composer-trigger">
-              Log in to share your feedback...
+              Sign in with Google to share your feedback...
             </button>
           </div>
           <div id="gate-notice" class="inline-alert" role="status" hidden></div>
@@ -367,25 +386,18 @@
       </div>
     </div>
 
-    <!-- Glassmorphic Authentication Modal (Log In / Create Account / Gmail) -->
+    <!-- Glassmorphic Google-Only Authentication Modal -->
     <div id="auth-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title" hidden>
       <div class="modal-backdrop" data-close-modal="true"></div>
       <div class="modal-dialog auth-dialog">
         <div class="modal-header">
           <div>
-            <h2 id="auth-modal-title" class="modal-title">Welcome Back</h2>
-            <p id="auth-modal-subtitle" class="modal-subtitle">Sign in to share feedback on BatStateWall</p>
+            <h2 id="auth-modal-title" class="modal-title">Sign in to BatStateWall</h2>
+            <p id="auth-modal-subtitle" class="modal-subtitle">
+              Log in or create your account with your Google / Gmail account.
+            </p>
           </div>
           <button type="button" id="close-auth-modal" class="btn-icon-close" aria-label="Close modal">&times;</button>
-        </div>
-
-        <div class="auth-tabs" role="tablist">
-          <button type="button" id="tab-login" class="auth-tab is-active" data-mode="login" role="tab" aria-selected="true">
-            Log In
-          </button>
-          <button type="button" id="tab-register" class="auth-tab" data-mode="register" role="tab" aria-selected="false">
-            Create Account
-          </button>
         </div>
 
         <a id="modal-google-btn" class="btn-google" href="/api/auth/google">
@@ -407,100 +419,12 @@
               d="M12 23.4c2.95 0 5.44-.98 7.25-2.64l-3.69-2.86c-.98.66-2.23 1.06-3.56 1.06-3.17 0-5.85-2.08-6.73-4.9l-3.73 2.9C3.46 20.78 7.42 23.4 12 23.4z"
             />
           </svg>
-          <span>Continue with Google (Gmail)</span>
+          <span>Continue with Google</span>
         </a>
 
-        <div class="auth-divider"><span>or continue with email</span></div>
-
-        <!-- Email / Password Log In Form -->
-        <form id="login-form" novalidate>
-          <div class="form-group">
-            <label for="login-email" class="field-label">Email Address</label>
-            <input
-              type="email"
-              id="login-email"
-              name="email"
-              placeholder="you@g.batstate-u.edu.ph"
-              autocomplete="email"
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="login-password" class="field-label">Password</label>
-            <div class="password-wrapper">
-              <input
-                type="password"
-                id="login-password"
-                name="password"
-                placeholder="Enter your password"
-                autocomplete="current-password"
-              />
-              <button
-                type="button"
-                class="btn-toggle-pass"
-                data-target="login-password"
-                aria-label="Show password"
-              >
-                Show
-              </button>
-            </div>
-          </div>
-
-          <button type="submit" id="login-submit-btn" class="btn-primary btn-full">
-            <span class="btn-label">Log In</span>
-          </button>
-        </form>
-
-        <!-- Create Account Form -->
-        <form id="register-form" novalidate hidden>
-          <div class="form-group">
-            <label for="register-name" class="field-label">Full Name</label>
-            <input
-              type="text"
-              id="register-name"
-              name="name"
-              placeholder="e.g., Juan Dela Cruz"
-              autocomplete="name"
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="register-email" class="field-label">Email Address</label>
-            <input
-              type="email"
-              id="register-email"
-              name="email"
-              placeholder="you@g.batstate-u.edu.ph"
-              autocomplete="email"
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="register-password" class="field-label">Password</label>
-            <div class="password-wrapper">
-              <input
-                type="password"
-                id="register-password"
-                name="password"
-                placeholder="Create a password"
-                autocomplete="new-password"
-              />
-              <button
-                type="button"
-                class="btn-toggle-pass"
-                data-target="register-password"
-                aria-label="Show password"
-              >
-                Show
-              </button>
-            </div>
-            <p class="field-hint">Minimum 8 characters</p>
-          </div>
-
-          <button type="submit" id="register-submit-btn" class="btn-primary btn-full">
-            <span class="btn-label">Create Account</span>
-          </button>
-        </form>
+        <p class="auth-google-note">
+          New to BatStateWall? Your account is created automatically the first time you sign in with Google.
+        </p>
 
         <div id="auth-error" class="form-error auth-error" role="alert" hidden></div>
       </div>
