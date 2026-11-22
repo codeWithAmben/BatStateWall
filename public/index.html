@@ -19,6 +19,7 @@
   <script src="https://cdn.jsdelivr.net/npm/lottie-web@5.12.2/build/player/lottie_svg.min.js" defer></script>
   <script type="module" src="scene3d.js"></script>
   <script src="app.js" defer></script>
+  <script src="sudoku.js" defer></script>
 </head>
 
 <body>
@@ -74,8 +75,21 @@
         </button>
       </div>
 
-      <!-- Right Controls: Live Pill + Mobile Info Sheet Trigger + Profile Menu -->
+      <!-- Right Controls: Sudoku Arena + Live Pill + Mobile Info Sheet Trigger + Profile Menu -->
       <div class="header-right">
+        <button type="button" id="open-sudoku-btn" class="sudoku-launch-btn" aria-label="Play BatStateU Sudoku Arena"
+          title="Play BatStateU Sudoku Arena">
+          <svg class="sudoku-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="3" />
+            <line x1="9" y1="3" x2="9" y2="21" />
+            <line x1="15" y1="3" x2="15" y2="21" />
+            <line x1="3" y1="9" x2="21" y2="9" />
+            <line x1="3" y1="15" x2="21" y2="15" />
+          </svg>
+          <span class="sudoku-btn-label">Sudoku</span>
+        </button>
+
         <div class="live-pill" title="Live community feed">
           <span class="live-dot" aria-hidden="true"></span>
           <span class="live-label">Live</span>
@@ -93,19 +107,21 @@
 
         <div id="auth-controls" class="auth-controls">
           <div id="auth-guest-actions" class="auth-guest-actions">
-            <a id="header-google-btn" class="btn-google btn-google-sm" href="/api/auth/google">
-              <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path fill="#EA4335"
-                  d="M12 5.04c1.64 0 3.12.56 4.28 1.67l3.2-3.2C17.54 1.69 14.95.6 12 .6 7.42.6 3.46 3.22 1.54 7.04l3.73 2.9C6.15 7.12 8.83 5.04 12 5.04z" />
-                <path fill="#4285F4"
-                  d="M23.49 12.27c0-.79-.07-1.55-.2-2.27H12v4.3h6.45c-.28 1.49-1.12 2.75-2.38 3.6l3.69 2.86c2.16-1.99 3.73-4.92 3.73-8.49z" />
-                <path fill="#FBBC05"
-                  d="M5.27 14.06a6.94 6.94 0 0 1 0-4.12l-3.73-2.9a11.39 11.39 0 0 0 0 9.92l3.73-2.9z" />
-                <path fill="#34A853"
-                  d="M12 23.4c2.95 0 5.44-.98 7.25-2.64l-3.69-2.86c-.98.66-2.23 1.06-3.56 1.06-3.17 0-5.85-2.08-6.73-4.9l-3.73 2.9C3.46 20.78 7.42 23.4 12 23.4z" />
-              </svg>
-              <span>Sign in with Google</span>
-            </a>
+              <a id="header-google-btn" class="btn-google btn-google-sm" href="/api/auth/google"
+                aria-label="Sign in with Google">
+                <svg class="google-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#EA4335"
+                    d="M12 5.04c1.64 0 3.12.56 4.28 1.67l3.2-3.2C17.54 1.69 14.95.6 12 .6 7.42.6 3.46 3.22 1.54 7.04l3.73 2.9C6.15 7.12 8.83 5.04 12 5.04z" />
+                  <path fill="#4285F4"
+                    d="M23.49 12.27c0-.79-.07-1.55-.2-2.27H12v4.3h6.45c-.28 1.49-1.12 2.75-2.38 3.6l3.69 2.86c2.16-1.99 3.73-4.92 3.73-8.49z" />
+                  <path fill="#FBBC05"
+                    d="M5.27 14.06a6.94 6.94 0 0 1 0-4.12l-3.73-2.9a11.39 11.39 0 0 0 0 9.92l3.73-2.9z" />
+                  <path fill="#34A853"
+                    d="M12 23.4c2.95 0 5.44-.98 7.25-2.64l-3.69-2.86c-.98.66-2.23 1.06-3.56 1.06-3.17 0-5.85-2.08-6.73-4.9l-3.73 2.9C3.46 20.78 7.42 23.4 12 23.4z" />
+                </svg>
+                <span class="google-label-full">Sign in with Google</span>
+                <span class="google-label-short">Sign in</span>
+              </a>
           </div>
 
           <div id="auth-user-menu" class="profile-menu-wrap" hidden>
@@ -263,6 +279,31 @@
         </div>
       </section>
 
+      <!-- Live Sudoku Leaderboard Widget -->
+      <section id="sidebar-rankings-card" class="fb-card sidebar-card rankings-card"
+        aria-label="Sudoku rankings leaderboard">
+        <div class="rankings-card-head">
+          <h2 class="sidebar-title">Sudoku Rankings</h2>
+          <div id="sidebar-rankings-tabs" class="mini-tabs" role="tablist" aria-label="Leaderboard scope">
+            <button type="button" class="mini-tab is-active" data-sidebar-scope="overall" role="tab"
+              aria-selected="true">Overall</button>
+            <button type="button" class="mini-tab" data-sidebar-scope="daily" role="tab"
+              aria-selected="false">Daily</button>
+          </div>
+        </div>
+
+        <div id="sidebar-rankings-list" class="rankings-list" aria-live="polite">
+          <div class="rankings-empty">Loading leaderboard...</div>
+        </div>
+
+        <div id="sidebar-my-rank" class="sidebar-my-rank" hidden></div>
+
+        <div class="rankings-actions">
+          <button type="button" id="sidebar-play-sudoku-btn" class="btn-primary btn-sm">Play Sudoku</button>
+          <button type="button" id="open-rankings-btn" class="btn-ghost btn-sm">Full Top 50</button>
+        </div>
+      </section>
+
       <section class="fb-card sidebar-card">
         <h2 class="sidebar-title">Posting Guidelines</h2>
         <ul class="guidelines-list">
@@ -353,6 +394,11 @@
         </div>
       </div>
 
+      <div class="mobile-sudoku-actions">
+        <button type="button" id="mobile-play-sudoku-btn" class="btn-primary btn-sm">Play Sudoku</button>
+        <button type="button" id="mobile-open-rankings-btn" class="btn-ghost btn-sm">View Rankings</button>
+      </div>
+
       <h3 class="info-subheading">Posting Guidelines</h3>
       <ul class="guidelines-list">
         <li>Keep posts respectful and constructive.</li>
@@ -394,6 +440,196 @@
       </p>
 
       <div id="auth-error" class="form-error auth-error" role="alert" hidden></div>
+    </div>
+  </div>
+
+  <!-- Full-Featured BatStateU Sudoku Arena Modal Overlay -->
+  <div id="sudoku-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="sudoku-modal-title"
+    hidden>
+    <div class="modal-backdrop" data-close-sudoku="true"></div>
+    <div class="modal-dialog sudoku-dialog">
+      <div class="sudoku-header">
+        <div class="sudoku-title-wrap">
+          <h2 id="sudoku-modal-title" class="modal-title">BatStateU Sudoku Arena</h2>
+          <span id="sudoku-mode-badge" class="sudoku-mode-badge">Classic &middot; Easy</span>
+        </div>
+
+        <div class="sudoku-header-actions">
+          <button type="button" id="sudoku-pause-btn" class="btn-icon-round" aria-label="Pause game" title="Pause (P)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+              stroke-linejoin="round" aria-hidden="true">
+              <rect x="6" y="4" width="4" height="16" />
+              <rect x="14" y="4" width="4" height="16" />
+            </svg>
+          </button>
+          <button type="button" id="sudoku-sound-btn" class="btn-icon-round" aria-label="Toggle sound effects"
+            aria-pressed="true" title="Toggle sound">
+            <svg class="sound-on-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+            </svg>
+            <svg class="sound-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden>
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <line x1="23" y1="9" x2="17" y2="15" />
+              <line x1="17" y1="9" x2="23" y2="15" />
+            </svg>
+          </button>
+          <button type="button" id="close-sudoku-modal" class="btn-icon-close" aria-label="Close Sudoku Arena">
+            &times;
+          </button>
+        </div>
+      </div>
+
+      <div class="sudoku-topbar">
+        <div id="sudoku-mode-tabs" class="sudoku-mode-tabs" role="group" aria-label="Game mode and difficulty">
+          <button type="button" class="sudoku-mode-tab" data-mode="daily" data-difficulty="medium">Daily</button>
+          <button type="button" class="sudoku-mode-tab is-active" data-mode="classic"
+            data-difficulty="easy">Easy</button>
+          <button type="button" class="sudoku-mode-tab" data-mode="classic" data-difficulty="medium">Medium</button>
+          <button type="button" class="sudoku-mode-tab" data-mode="classic" data-difficulty="hard">Hard</button>
+        </div>
+
+        <div class="sudoku-hud" aria-live="polite">
+          <span class="hud-pill" title="Elapsed time">
+            <span class="hud-label">Time</span>
+            <strong id="sudoku-timer">00:00</strong>
+          </span>
+          <span class="hud-pill" title="Mistakes limit">
+            <span class="hud-label">Mistakes</span>
+            <strong id="sudoku-mistakes">0 / 3</strong>
+          </span>
+          <span class="hud-pill" title="Hints remaining">
+            <span class="hud-label">Hints</span>
+            <strong id="sudoku-hints-hud">3 left</strong>
+          </span>
+          <span id="sudoku-combo" class="hud-pill hud-combo" hidden title="Consecutive correct streak">
+            <span class="hud-label">Combo</span>
+            <strong id="sudoku-combo-count">x2</strong>
+          </span>
+        </div>
+      </div>
+
+      <div class="sudoku-arena">
+        <div class="sudoku-board-wrap">
+          <div id="sudoku-grid" class="sudoku-grid" role="grid" aria-label="Sudoku 9 by 9 board"></div>
+
+          <div id="sudoku-loading-overlay" class="sudoku-overlay" hidden>
+            <div class="sudoku-spinner" aria-hidden="true"></div>
+            <p class="sudoku-overlay-title">Preparing Board...</p>
+            <p class="sudoku-overlay-sub">Verifying unique solution on server</p>
+          </div>
+
+          <div id="sudoku-paused-overlay" class="sudoku-overlay" hidden>
+            <h3 class="sudoku-overlay-title">Game Paused</h3>
+            <p class="sudoku-overlay-sub">Clock paused and numbers hidden for fair play.</p>
+            <button type="button" id="sudoku-resume-btn" class="btn-primary">Resume Game</button>
+          </div>
+
+          <div id="sudoku-result-overlay" class="sudoku-overlay sudoku-result-overlay" hidden>
+            <span id="sudoku-result-badge" class="result-badge">VICTORY</span>
+            <h3 id="sudoku-result-title" class="sudoku-overlay-title">Puzzle Solved!</h3>
+            <p id="sudoku-result-subtitle" class="sudoku-overlay-sub"></p>
+            <div id="sudoku-score-breakdown" class="score-breakdown"></div>
+            <div class="sudoku-result-actions">
+              <button type="button" id="sudoku-share-win-btn" class="btn-primary" hidden>Share Victory to Wall</button>
+              <button type="button" id="sudoku-play-again-btn" class="btn-ghost">Play Again</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sudoku-controls">
+          <div class="sudoku-tool-row">
+            <button type="button" id="sudoku-undo-btn" class="sudoku-tool-btn" title="Undo (Ctrl+Z)">
+              <span class="tool-label">Undo</span>
+            </button>
+            <button type="button" id="sudoku-redo-btn" class="sudoku-tool-btn" title="Redo (Ctrl+Y)">
+              <span class="tool-label">Redo</span>
+            </button>
+            <button type="button" id="sudoku-erase-btn" class="sudoku-tool-btn" title="Erase cell (Backspace)">
+              <span class="tool-label">Erase</span>
+            </button>
+            <button type="button" id="sudoku-notes-btn" class="sudoku-tool-btn" aria-pressed="false"
+              title="Toggle pencil notes (N)">
+              <span class="tool-label">Notes <span id="sudoku-notes-badge" class="notes-state-pill">OFF</span></span>
+            </button>
+            <button type="button" id="sudoku-hint-btn" class="sudoku-tool-btn" title="Reveal smart hint (H)">
+              <span class="tool-label">Hint <span id="sudoku-hint-count" class="hint-badge">3</span></span>
+            </button>
+          </div>
+
+          <div id="sudoku-numpad" class="sudoku-numpad" role="group" aria-label="Number pad 1 to 9">
+            <button type="button" class="numpad-btn" data-digit="1"><span>1</span><small
+                class="numpad-rem">9</small></button>
+            <button type="button" class="numpad-btn" data-digit="2"><span>2</span><small
+                class="numpad-rem">9</small></button>
+            <button type="button" class="numpad-btn" data-digit="3"><span>3</span><small
+                class="numpad-rem">9</small></button>
+            <button type="button" class="numpad-btn" data-digit="4"><span>4</span><small
+                class="numpad-rem">9</small></button>
+            <button type="button" class="numpad-btn" data-digit="5"><span>5</span><small
+                class="numpad-rem">9</small></button>
+            <button type="button" class="numpad-btn" data-digit="6"><span>6</span><small
+                class="numpad-rem">9</small></button>
+            <button type="button" class="numpad-btn" data-digit="7"><span>7</span><small
+                class="numpad-rem">9</small></button>
+            <button type="button" class="numpad-btn" data-digit="8"><span>8</span><small
+                class="numpad-rem">9</small></button>
+            <button type="button" class="numpad-btn" data-digit="9"><span>9</span><small
+                class="numpad-rem">9</small></button>
+          </div>
+
+          <div class="sudoku-controls-footer">
+            <button type="button" id="sudoku-new-game-btn" class="btn-ghost btn-sm">New Puzzle</button>
+            <button type="button" id="sudoku-open-ranks-btn" class="btn-ghost btn-sm">Rankings</button>
+          </div>
+
+          <div id="sudoku-status" class="sudoku-status" role="status" hidden></div>
+
+          <p class="sudoku-shortcuts-hint">
+            Keys: Arrows/WASD move &middot; 1&ndash;9 fill &middot; N notes &middot; H hint &middot; P pause &middot;
+            Ctrl+Z undo
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Full Top 50 Sudoku Leaderboard Modal -->
+  <div id="rankings-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="rankings-modal-title"
+    hidden>
+    <div class="modal-backdrop" data-close-rankings="true"></div>
+    <div class="modal-dialog rankings-dialog">
+      <div class="modal-header">
+        <div>
+          <h2 id="rankings-modal-title" class="modal-title">BatStateU Sudoku Rankings</h2>
+          <p id="rankings-subtitle" class="modal-subtitle">Top 50 Spartan puzzle solvers across BatStateWall</p>
+        </div>
+        <button type="button" id="close-rankings-modal" class="btn-icon-close" aria-label="Close rankings modal">
+          &times;
+        </button>
+      </div>
+
+      <div id="rankings-tabs" class="rankings-tabs" role="tablist" aria-label="Rankings category">
+        <button type="button" class="rankings-tab is-active" data-rankings-scope="overall" role="tab"
+          aria-selected="true">Overall</button>
+        <button type="button" class="rankings-tab" data-rankings-scope="daily" role="tab"
+          aria-selected="false">Daily</button>
+        <button type="button" class="rankings-tab" data-rankings-scope="easy" role="tab" aria-selected="false">Easy
+          Best</button>
+        <button type="button" class="rankings-tab" data-rankings-scope="medium" role="tab" aria-selected="false">Medium
+          Best</button>
+        <button type="button" class="rankings-tab" data-rankings-scope="hard" role="tab" aria-selected="false">Hard
+          Best</button>
+      </div>
+
+      <div id="full-rankings-list" class="full-rankings-list" aria-live="polite">
+        <div class="rankings-empty">Loading Top 50 rankings...</div>
+      </div>
+
+      <div id="full-rankings-me" class="sidebar-my-rank full-rankings-me" hidden></div>
     </div>
   </div>
 

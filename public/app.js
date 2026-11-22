@@ -242,10 +242,14 @@ function showSuccessToast(title = 'Feedback posted!', subtitle = 'Your message i
 }
 
 function syncBodyScrollLock() {
+  const sudokuModal = document.getElementById('sudoku-modal');
+  const rankingsModal = document.getElementById('rankings-modal');
   const anyModalOpen =
     (authModal && !authModal.hidden) ||
     (composerModal && !composerModal.hidden) ||
-    (infoModal && !infoModal.hidden);
+    (infoModal && !infoModal.hidden) ||
+    (sudokuModal && !sudokuModal.hidden) ||
+    (rankingsModal && !rankingsModal.hidden);
   document.body.style.overflow = anyModalOpen ? 'hidden' : '';
 }
 
@@ -307,6 +311,8 @@ function updateAuthUI() {
     composerAvatar.textContent = '?';
     composerTrigger.textContent = 'Sign in with Google to share your feedback...';
   }
+
+  window.dispatchEvent(new CustomEvent('batstate:auth-changed', { detail: { user: currentUser } }));
 }
 
 /* ==================== Modals & Composer Controls ==================== */
@@ -342,6 +348,16 @@ function openComposerModal() {
   formError.hidden = true;
   composerModal.hidden = false;
   syncBodyScrollLock();
+  updateComposerState();
+  messageInput.focus();
+}
+
+function openComposerWithText(prefillText) {
+  openComposerModal();
+  if (!currentUser) {
+    return;
+  }
+  messageInput.value = String(prefillText ?? '').slice(0, MAX_MESSAGE_LENGTH);
   updateComposerState();
   messageInput.focus();
 }
@@ -485,6 +501,20 @@ function renderPostCardHtml(item) {
   const googleBadgeHtml =
     item.auth_provider === 'google' ? '<span class="google-badge">Gmail</span>' : '';
 
+  const sudokuRank = Number(item.sudoku_rank);
+  let rankBadgeHtml = '';
+  if (Number.isInteger(sudokuRank) && sudokuRank >= 1 && sudokuRank <= 10) {
+    const rankClass =
+      sudokuRank === 1
+        ? 'rank-gold'
+        : sudokuRank === 2
+          ? 'rank-silver'
+          : sudokuRank === 3
+            ? 'rank-bronze'
+            : 'rank-top10';
+    rankBadgeHtml = `<span class="rank-badge ${rankClass}" title="Sudoku Community Rank #${sudokuRank}">#${sudokuRank} Sudoku</span>`;
+  }
+
   const summaryHtml =
     likeCount > 0 || commentCount > 0
       ? `
@@ -517,6 +547,7 @@ function renderPostCardHtml(item) {
           <div class="post-author-meta">
             <div class="post-name-line">
               <span class="post-author">${safeName}</span>
+              ${rankBadgeHtml}
               ${googleBadgeHtml}
             </div>
             <div class="post-submeta">
@@ -1385,6 +1416,20 @@ document.addEventListener('keydown', (event) => {
     closeAuthModal();
   }
 });
+
+// Expose safe integration hooks for sibling UI modules (sudoku.js)
+window.BatStateWall = {
+  getCurrentUser: () => currentUser,
+  openAuthModal,
+  openComposerWithText,
+  closeInfoModal,
+  showSuccessToast,
+  refreshFeed: () => fetchFeed(),
+  syncBodyScrollLock,
+  escapeHtml,
+  buildAvatarHtml,
+  getAvatarTone,
+};
 
 // Initialize page state & start background live-feed poll
 (async function init() {

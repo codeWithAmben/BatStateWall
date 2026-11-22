@@ -19,11 +19,13 @@ BatStateWall/
 │   │   ├── spartan-bg.png     # Left backdrop artwork
 │   │   ├── campus-bg.png      # Right backdrop artwork
 │   │   └── post-success.json  # Lottie checkmark confirmation animation
-│   ├── index.html             # Main feedback wall page
+│   ├── index.html             # Main feedback wall page + Sudoku Arena & Rankings modals
 │   ├── style.css              # Dark obsidian & crimson glassmorphic 3D styling
-│   ├── scene3d.js             # Three.js WebGL 3D background & card tilt/spotlight
-│   └── app.js                 # Frontend API calls, live counter, XSS-safe rendering
+│   ├── scene3d.js             # Three.js WebGL 3D background & foreground floating ember dots
+│   ├── app.js                 # Frontend API calls, live counter, XSS-safe rendering
+│   └── sudoku.js              # Sudoku Arena client controller, Web Audio SFX, and leaderboard UI
 ├── server.js               # Express server, PostgreSQL pool, and REST API endpoints
+├── sudokuEngine.js         # Zero-dependency Sudoku generator, MRV solver, hints, and scoring
 ├── profanityFilter.js      # English & Tagalog profanity filter for names, posts, and comments
 ├── schema.sql              # SQL script to create all required tables in Supabase
 ├── package.json            # Dependencies and "start" script
@@ -81,7 +83,7 @@ flowchart LR
 3. **Create the database tables in Supabase**
 
    - Open your Supabase project dashboard and go to the **SQL Editor**.
-   - Copy the contents of `schema.sql` and run it to create the `users` and `items` tables.
+   - Copy the contents of `schema.sql` and run it to create all tables (`users`, `items`, `likes`, `comments`, `reports`, `sudoku_sessions`, `sudoku_user_stats`).
 
 4. **Start the application**
 
@@ -307,6 +309,18 @@ Base URL (local): `http://localhost:3000`
 | `GET /api/items/:id/comments` | Public | Returns comments for a post ordered oldest first | `200`, `400`, `404`, `500` |
 | `POST /api/items/:id/comments` | Required | Adds a comment (`{ body }`, max 280 chars) to a post | `201`, `400`, `401`, `404`, `500` |
 | `POST /api/items/:id/report` | Required | Submits a report (`{ reason }`) for a post | `201`, `400`, `401`, `404`, `500` |
+
+### 5. BatStateU Sudoku Arena & Rankings Endpoints
+
+| Method & Route | Auth | Description | Status Codes |
+|---|---|---|---|
+| `GET /api/sudoku/active` | Required | Returns latest `in_progress` board, Daily Challenge status, and personal stats | `200`, `401`, `500` |
+| `POST /api/sudoku/start` | Required | Starts or resumes a unique-solution `classic` (`easy\|medium\|hard`) or `daily` puzzle (`409` if Daily already solved today) | `200`, `201`, `400`, `401`, `409`, `500` |
+| `POST /api/sudoku/:id/move` | Owner | Validates a cell move server-side, updates notes/timer, and tracks mistakes (max 3) | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `POST /api/sudoku/:id/hint` | Owner | Reveals the most constrained smart hint cell (max 3 per game) | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `POST /api/sudoku/:id/complete` | Owner | Verifies completed board inside a transaction, calculates score & streak, and updates leaderboard stats | `200`, `400`, `401`, `403`, `404`, `409`, `500` |
+| `POST /api/sudoku/:id/abandon` | Owner | Marks an in-progress Sudoku session as `abandoned` | `200`, `400`, `401`, `403`, `404`, `500` |
+| `GET /api/sudoku/rankings` | Public | Returns leaderboard (`?scope=overall\|daily\|easy\|medium\|hard&limit=5..50`) and caller's rank (`myRank`) | `200`, `500` |
 
 ---
 
