@@ -87,9 +87,12 @@ async function ensureSchema() {
         google_id TEXT UNIQUE,
         avatar_url TEXT,
         auth_provider TEXT NOT NULL DEFAULT 'google',
+        terms_accepted_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+
+    await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;');
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS items (
@@ -309,7 +312,7 @@ async function getAuthenticatedUser(req) {
   }
 
   const result = await pool.query(
-    'SELECT id, name, email, avatar_url, auth_provider FROM users WHERE id = $1',
+    'SELECT id, name, email, avatar_url, auth_provider, terms_accepted_at FROM users WHERE id = $1',
     [userId]
   );
   return result.rows[0] || null;
@@ -378,6 +381,15 @@ app.use((err, req, res, next) => {
 // Serve static frontend files (HTML, CSS, JS) from the /public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Clean legal document routes (also usable as Google OAuth Consent Screen URLs)
+app.get('/terms', (req, res) => {
+  return res.sendFile(path.join(__dirname, 'public', 'terms.html'));
+});
+
+app.get('/privacy', (req, res) => {
+  return res.sendFile(path.join(__dirname, 'public', 'privacy.html'));
+});
+
 // ==================== Authentication Endpoints ====================
 
 // GET /api/auth/config - Reports whether Google OAuth is configured on the server
@@ -394,7 +406,7 @@ app.get('/api/auth/me', async (req, res) => {
 
   try {
     const result = await pool.query(
-      'SELECT id, name, email, avatar_url, auth_provider FROM users WHERE id = $1',
+      'SELECT id, name, email, avatar_url, auth_provider, terms_accepted_at FROM users WHERE id = $1',
       [userId]
     );
     if (result.rows.length === 0) {
@@ -414,7 +426,7 @@ app.post('/api/auth/logout', (req, res) => {
   return res.status(200).json({ message: 'Logged out successfully.' });
 });
 
-// GET /api/auth/google - Start Google (Gmail) OAuth 2.0 login flow
+// GET /api/auth/google - Start Google (Gmail) OAuth 2.0 login flow after explicit Terms/Privacy consent
 app.get('/api/auth/google', (req, res) => {
   if (!isGoogleConfigured()) {
     if (req.accepts('html', 'json') === 'json') {
@@ -423,8 +435,17 @@ app.get('/api/auth/google', (req, res) => {
     return res.redirect('/?auth_error=google_not_configured');
   }
 
+  if (req.query.consent !== '1') {
+    if (req.accepts('html', 'json') === 'json') {
+      return res.status(400).json({
+        error: 'You must agree to the Terms of Service and Privacy Policy before continuing.',
+      });
+    }
+    return res.redirect('/?auth_error=terms_required');
+  }
+
   const state = crypto.randomBytes(16).toString('hex');
-  setCookie(res, req, OAUTH_STATE_COOKIE, state, 600);
+  setCookie(res, req, OAUTH_STATE_COOKIE, `${state}:consent`, 600);
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
@@ -444,7 +465,8 @@ app.get('/api/auth/google/callback', async (req, res) => {
   }
 
   const cookies = parseCookies(req);
-  const expectedState = cookies[OAUTH_STATE_COOKIE];
+  const rawExpected = typeof cookies[OAUTH_STATE_COOKIE] === 'string' ? cookies[OAUTH_STATE_COOKIE] : '';
+  const [expectedState, consentFlag] = rawExpected.split(':');
   clearCookie(res, req, OAUTH_STATE_COOKIE);
 
   if (req.query.error) {
@@ -455,6 +477,9 @@ app.get('/api/auth/google/callback', async (req, res) => {
   const state = typeof req.query.state === 'string' ? req.query.state : '';
   if (!code || !state || !expectedState || state !== expectedState) {
     return res.redirect('/?auth_error=google_failed');
+  }
+  if (consentFlag !== 'consent') {
+    return res.redirect('/?auth_error=terms_required');
   }
 
   try {
@@ -511,17 +536,18 @@ app.get('/api/auth/google/callback', async (req, res) => {
       const updated = await pool.query(
         `UPDATE users
          SET google_id = COALESCE(google_id, $1),
-             avatar_url = COALESCE($2, avatar_url)
+             avatar_url = COALESCE($2, avatar_url),
+             terms_accepted_at = COALESCE(terms_accepted_at, NOW())
          WHERE id = $3
-         RETURNING id, name, email, avatar_url, auth_provider`,
+         RETURNING id, name, email, avatar_url, auth_provider, terms_accepted_at`,
         [profile.sub, avatarUrl, existing.rows[0].id]
       );
       user = updated.rows[0];
     } else {
       const inserted = await pool.query(
-        `INSERT INTO users (name, email, google_id, avatar_url, auth_provider)
-         VALUES ($1, $2, $3, $4, 'google')
-         RETURNING id, name, email, avatar_url, auth_provider`,
+        `INSERT INTO users (name, email, google_id, avatar_url, auth_provider, terms_accepted_at)
+         VALUES ($1, $2, $3, $4, 'google', NOW())
+         RETURNING id, name, email, avatar_url, auth_provider, terms_accepted_at`,
         [displayName, email, profile.sub, avatarUrl]
       );
       user = inserted.rows[0];

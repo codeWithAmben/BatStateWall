@@ -65,6 +65,8 @@ const closeInfoModalBtn = document.getElementById('close-info-modal');
 const authModal = document.getElementById('auth-modal');
 const closeAuthModalBtn = document.getElementById('close-auth-modal');
 const authModalSubtitle = document.getElementById('auth-modal-subtitle');
+const authConsentLabel = document.getElementById('auth-consent-label');
+const termsConsentCheckbox = document.getElementById('terms-consent-checkbox');
 const modalGoogleBtn = document.getElementById('modal-google-btn');
 const authErrorEl = document.getElementById('auth-error');
 
@@ -382,10 +384,30 @@ function closeInfoModal() {
 
 const DEFAULT_AUTH_SUBTITLE = 'Log in or create your account with your Google / Gmail account.';
 
+function syncGoogleConsentUI() {
+  const agreed = Boolean(termsConsentCheckbox?.checked);
+  if (modalGoogleBtn) {
+    modalGoogleBtn.classList.toggle('is-disabled', !agreed);
+    modalGoogleBtn.setAttribute('aria-disabled', String(!agreed));
+  }
+  if (agreed) {
+    authConsentLabel?.classList.remove('is-error');
+    if (authErrorEl && !authErrorEl.hidden) {
+      authErrorEl.textContent = '';
+      authErrorEl.hidden = true;
+    }
+  }
+}
+
 function openAuthModal(subtitle) {
   closeAllMenus();
   authErrorEl.textContent = '';
   authErrorEl.hidden = true;
+  authConsentLabel?.classList.remove('is-error');
+  if (termsConsentCheckbox) {
+    termsConsentCheckbox.checked = false;
+  }
+  syncGoogleConsentUI();
   if (authModalSubtitle) {
     authModalSubtitle.textContent =
       typeof subtitle === 'string' && subtitle && subtitle !== 'login'
@@ -394,17 +416,33 @@ function openAuthModal(subtitle) {
   }
   authModal.hidden = false;
   syncBodyScrollLock();
-  modalGoogleBtn?.focus();
+  if (termsConsentCheckbox) {
+    termsConsentCheckbox.focus();
+  } else {
+    modalGoogleBtn?.focus();
+  }
 }
 
 function closeAuthModal() {
   authModal.hidden = true;
   authErrorEl.textContent = '';
   authErrorEl.hidden = true;
+  authConsentLabel?.classList.remove('is-error');
   syncBodyScrollLock();
 }
 
-function handleGoogleClick(event) {
+function handleModalGoogleClick(event) {
+  if (!termsConsentCheckbox?.checked) {
+    event.preventDefault();
+    authConsentLabel?.classList.add('is-error');
+    authErrorEl.textContent =
+      'Please agree to the Terms of Service and Privacy Policy before creating an account or signing in.';
+    authErrorEl.hidden = false;
+    window.BatStateScene?.pulseError();
+    termsConsentCheckbox?.focus();
+    return;
+  }
+
   if (!googleEnabled) {
     event.preventDefault();
     if (authModal.hidden) {
@@ -1051,6 +1089,12 @@ async function loadAuthState() {
   if (authResult === 'google_success' && currentUser) {
     window.BatStateScene?.pulseSuccess();
     showSuccessToast('Signed in with Google!', `Welcome, ${currentUser.name}`);
+  } else if (authError === 'terms_required') {
+    openAuthModal();
+    authConsentLabel?.classList.add('is-error');
+    authErrorEl.textContent =
+      'Please agree to the Terms of Service and Privacy Policy before creating an account or signing in.';
+    authErrorEl.hidden = false;
   } else if (authError) {
     const messages = {
       google_not_configured:
@@ -1197,8 +1241,9 @@ async function handleFormSubmit(event) {
 /* ==================== Event Wiring ==================== */
 
 // Header & Profile Dropdown
-headerGoogleBtn?.addEventListener('click', handleGoogleClick);
-modalGoogleBtn?.addEventListener('click', handleGoogleClick);
+headerGoogleBtn?.addEventListener('click', () => openAuthModal());
+termsConsentCheckbox?.addEventListener('change', syncGoogleConsentUI);
+modalGoogleBtn?.addEventListener('click', handleModalGoogleClick);
 logoutBtn?.addEventListener('click', handleLogout);
 
 profileMenuBtn?.addEventListener('click', (event) => {

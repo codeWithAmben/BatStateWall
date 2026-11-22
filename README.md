@@ -20,6 +20,8 @@ BatStateWall/
 │   │   ├── campus-bg.png      # Right backdrop artwork
 │   │   └── post-success.json  # Lottie checkmark confirmation animation
 │   ├── index.html             # Main feedback wall page + Sudoku Arena & Rankings modals
+│   ├── terms.html             # Public Terms of Service (/terms)
+│   ├── privacy.html           # Public Privacy Policy (/privacy)
 │   ├── style.css              # Dark obsidian & crimson glassmorphic 3D styling
 │   ├── scene3d.js             # Three.js WebGL 3D background & foreground floating ember dots
 │   ├── app.js                 # Frontend API calls, live counter, XSS-safe rendering
@@ -98,7 +100,7 @@ flowchart LR
 ## Setting Up Google (Gmail) Login
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create or select a project.
-2. Open **APIs & Services → OAuth consent screen**, choose **External**, fill in the app name (`BatStateWall`) and support email, and save.
+2. Open **APIs & Services → OAuth consent screen**, choose **External**, fill in the app name (`BatStateWall`), support email, Privacy Policy URL (`https://YOUR-RENDER-APP.onrender.com/privacy`), and Terms of Service URL (`https://YOUR-RENDER-APP.onrender.com/terms`), and save.
 3. Open **APIs & Services → Credentials → Create Credentials → OAuth client ID** (`Web application`).
 4. Add your **Authorized redirect URIs**:
    - Local development: `http://localhost:3000/api/auth/google/callback`

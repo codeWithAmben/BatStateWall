@@ -9,8 +9,12 @@ CREATE TABLE IF NOT EXISTS users (
   google_id TEXT UNIQUE,
   avatar_url TEXT,
   auth_provider TEXT NOT NULL DEFAULT 'google',
+  terms_accepted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Safe migration if you already created the "users" table earlier without terms_accepted_at
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS items (
   id SERIAL PRIMARY KEY,
