@@ -66,17 +66,21 @@ flowchart LR
    cp .env.example .env
    ```
 
-   Open `.env` and set `DATABASE_URL` to your **Supabase Session Pooler** connection string (found in Supabase under **Project Settings → Database → Connection string → Session pooler**).
+   Open `.env` and set `DATABASE_URL` to your **Supabase Session Pooler** connection string (found in Supabase under **Project Settings → Database → Connection string → Session pooler**), plus a random `SESSION_SECRET`:
 
    ```env
    DATABASE_URL=postgresql://postgres.YOUR_PROJECT_REF:YOUR_PASSWORD@aws-0-YOUR_REGION.pooler.supabase.com:5432/postgres
    PORT=3000
+   SESSION_SECRET=replace-with-a-long-random-secret
+   # Optional for Google / Gmail login:
+   GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=your-google-client-secret
    ```
 
-3. **Create the database table in Supabase**
+3. **Create the database tables in Supabase**
 
    - Open your Supabase project dashboard and go to the **SQL Editor**.
-   - Copy the contents of `schema.sql` and run it to create the `items` table.
+   - Copy the contents of `schema.sql` and run it to create the `users` and `items` tables.
 
 4. **Start the application**
 
@@ -85,6 +89,18 @@ flowchart LR
    ```
 
    Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+---
+
+## Setting Up Google (Gmail) Login
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create or select a project.
+2. Open **APIs & Services → OAuth consent screen**, choose **External**, fill in the app name (`BatStateWall`) and support email, and save.
+3. Open **APIs & Services → Credentials → Create Credentials → OAuth client ID** (`Web application`).
+4. Add your **Authorized redirect URIs**:
+   - Local development: `http://localhost:3000/api/auth/google/callback`
+   - Render production: `https://YOUR-RENDER-APP.onrender.com/api/auth/google/callback`
+5. Copy the **Client ID** and **Client Secret** into `.env` (locally) and into Render's **Environment Variables** as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 
 ---
 
@@ -100,8 +116,9 @@ flowchart LR
    - **Start Command:** `npm start`
 4. **Add Environment Variables**
    - Under **Environment Variables**, add:
-     - **Key:** `DATABASE_URL`
-     - **Value:** Your Supabase Session Pooler connection string
+     - `DATABASE_URL` — Your Supabase Session Pooler connection string
+     - `SESSION_SECRET` — A long random secret string for signing session cookies
+     - `GOOGLE_CLIENT_ID` & `GOOGLE_CLIENT_SECRET` *(optional, required for Gmail login)*
 5. **Deploy**
    - Click **Create Web Service**. Once the build finishes, Render will expose your live BatStateWall URL.
 
@@ -110,6 +127,18 @@ flowchart LR
 ## API Documentation
 
 Base URL (local): `http://localhost:3000`
+
+### Authentication Endpoints
+
+| Method & Route | Description | Status Codes |
+|---|---|---|
+| `GET /api/auth/config` | Returns `{ googleEnabled }` so the UI knows if Google OAuth is configured | `200` |
+| `GET /api/auth/me` | Returns `{ user }` for the signed-in cookie, or `{ user: null }` | `200`, `500` |
+| `POST /api/auth/register` | Creates an account (`{ name, email, password }`), hashes password with `scrypt`, sets HTTP-only session cookie | `201`, `400`, `409`, `500` |
+| `POST /api/auth/login` | Logs in with `{ email, password }` and sets HTTP-only session cookie | `200`, `400`, `401`, `500` |
+| `POST /api/auth/logout` | Clears the session cookie | `200` |
+| `GET /api/auth/google` | Redirects to Google OAuth 2.0 (Gmail) consent screen | `302`, `503` (JSON if unconfigured) |
+| `GET /api/auth/google/callback` | Handles Google OAuth callback, creates/links user, sets session cookie, redirects to `/` | `302` |
 
 ### 1. Get All Feedback Items
 
@@ -123,13 +152,10 @@ Base URL (local): `http://localhost:3000`
     "id": 2,
     "name": "Maria Santos",
     "message": "Proud Red Spartan! Excited for our IT 412 demo.",
+    "user_id": 1,
+    "avatar_url": null,
+    "auth_provider": "local",
     "created_at": "2026-11-22T02:55:00.123Z"
-  },
-  {
-    "id": 1,
-    "name": "Juan Dela Cruz",
-    "message": "Great campus Wi-Fi improvement this semester.",
-    "created_at": "2026-11-22T02:50:10.456Z"
   }
 ]
 ```
@@ -144,10 +170,10 @@ Base URL (local): `http://localhost:3000`
 
 ---
 
-### 2. Create a Feedback Item
+### 2. Create a Feedback Item *(Requires Login)*
 
 - **Endpoint:** `POST /api/items`
-- **Headers:** `Content-Type: application/json`
+- **Headers:** `Content-Type: application/json` (plus active session cookie from `/api/auth/register` or `/api/auth/login`)
 - **Request Body:**
 
 ```json
@@ -164,7 +190,18 @@ Base URL (local): `http://localhost:3000`
   "id": 3,
   "name": "Juan Dela Cruz",
   "message": "Go Red Spartans!",
+  "user_id": 1,
+  "avatar_url": null,
+  "auth_provider": "local",
   "created_at": "2026-11-22T03:00:00.000Z"
+}
+```
+
+- **Unauthorized Response (`401 Unauthorized`):**
+
+```json
+{
+  "error": "Please log in to post feedback."
 }
 ```
 
@@ -208,6 +245,9 @@ Base URL (local): `http://localhost:3000`
   "id": 1,
   "name": "Juan Dela Cruz",
   "message": "Great campus Wi-Fi improvement this semester.",
+  "user_id": 1,
+  "avatar_url": null,
+  "auth_provider": "local",
   "created_at": "2026-11-22T02:50:10.456Z"
 }
 ```
@@ -240,15 +280,18 @@ Base URL (local): `http://localhost:3000`
 
 ## Testing with Postman
 
-Use the test cases below in Postman to verify every API status code (`200`, `201`, `400`, `404`):
+Postman automatically stores cookies returned by `/api/auth/register` and `/api/auth/login` for subsequent requests to the same domain:
 
 | # | Test Case | Method & URL | Body (JSON) | Expected Status | Expected Result |
 |---|-----------|--------------|-------------|-----------------|-----------------|
-| 1 | Create valid feedback post | `POST /api/items` | `{"name": "  Juan Dela Cruz  ", "message": "  Go Red Spartans!  "}` | `201 Created` | Returns created item with trimmed `name` and `message`, generated `id`, and `created_at` |
-| 2 | Fetch all feedback posts | `GET /api/items` | *(none)* | `200 OK` | Returns JSON array of items ordered newest first |
-| 3 | Fetch existing post by ID | `GET /api/items/1` | *(none)* | `200 OK` | Returns the matching item object for `id: 1` |
-| 4 | Reject missing/empty name | `POST /api/items` | `{"name": "   ", "message": "Hello BatStateU"}` | `400 Bad Request` | Returns `{"error": "Name is required."}` |
-| 5 | Reject missing/empty message | `POST /api/items` | `{"name": "Juan", "message": ""}` | `400 Bad Request` | Returns `{"error": "Message is required."}` |
-| 6 | Reject message over 280 characters | `POST /api/items` | `{"name": "Juan", "message": "<281+ character string>"}` | `400 Bad Request` | Returns `{"error": "Message must be 280 characters or fewer."}` |
-| 7 | Reject non-numeric item ID | `GET /api/items/abc` | *(none)* | `400 Bad Request` | Returns `{"error": "Invalid ID. ID must be a number."}` |
-| 8 | Handle non-existent item ID | `GET /api/items/999999` | *(none)* | `404 Not Found` | Returns `{"error": "Item not found."}` |
+| 1 | Reject unauthenticated post | `POST /api/items` *(before login)* | `{"name": "Juan", "message": "Hello"}` | `401 Unauthorized` | Returns `{"error": "Please log in to post feedback."}` |
+| 2 | Create a new user account | `POST /api/auth/register` | `{"name": "Juan Dela Cruz", "email": "juan@example.com", "password": "Password123"}` | `201 Created` | Returns `{ user }` and sets `batstatewall_session` cookie |
+| 3 | Log in with existing account | `POST /api/auth/login` | `{"email": "juan@example.com", "password": "Password123"}` | `200 OK` | Returns `{ user }` and refreshes session cookie |
+| 4 | Create valid feedback post | `POST /api/items` *(while logged in)* | `{"name": "  Juan Dela Cruz  ", "message": "  Go Red Spartans!  "}` | `201 Created` | Returns created item with trimmed `name` and `message`, generated `id`, and `created_at` |
+| 5 | Fetch all feedback posts | `GET /api/items` | *(none)* | `200 OK` | Returns JSON array of items ordered newest first |
+| 6 | Fetch existing post by ID | `GET /api/items/1` | *(none)* | `200 OK` | Returns the matching item object for `id: 1` |
+| 7 | Reject missing/empty name | `POST /api/items` *(while logged in)* | `{"name": "   ", "message": "Hello BatStateU"}` | `400 Bad Request` | Returns `{"error": "Name is required."}` |
+| 8 | Reject missing/empty message | `POST /api/items` *(while logged in)* | `{"name": "Juan", "message": ""}` | `400 Bad Request` | Returns `{"error": "Message is required."}` |
+| 9 | Reject message over 280 characters | `POST /api/items` *(while logged in)* | `{"name": "Juan", "message": "<281+ character string>"}` | `400 Bad Request` | Returns `{"error": "Message must be 280 characters or fewer."}` |
+| 10 | Reject non-numeric item ID | `GET /api/items/abc` | *(none)* | `400 Bad Request` | Returns `{"error": "Invalid ID. ID must be a number."}` |
+| 11 | Handle non-existent item ID | `GET /api/items/999999` | *(none)* | `404 Not Found` | Returns `{"error": "Item not found."}` |

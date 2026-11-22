@@ -4,6 +4,10 @@ const MAX_MESSAGE_LENGTH = 280;
 // Cache references to DOM elements used throughout the script
 const siteHeader = document.querySelector('.site-header');
 const feedbackForm = document.getElementById('feedback-form');
+const formAuthGate = document.getElementById('form-auth-gate');
+const gateNotice = document.getElementById('gate-notice');
+const postingAsName = document.getElementById('posting-as-name');
+const postingAsEmail = document.getElementById('posting-as-email');
 const nameInput = document.getElementById('name-input');
 const messageInput = document.getElementById('message-input');
 const charCounter = document.getElementById('char-counter');
@@ -16,8 +20,45 @@ const headerTotalPostsEl = document.getElementById('header-total-posts');
 const postsList = document.getElementById('posts-list');
 const successToast = document.getElementById('success-toast');
 const lottieContainer = document.getElementById('lottie-success');
+const toastTitleEl = document.getElementById('toast-title');
+const toastSubtitleEl = document.getElementById('toast-subtitle');
 
-// Lottie instance, toast timer, and previous count for subtle counter pulse
+// Authentication UI elements
+const authGuestActions = document.getElementById('auth-guest-actions');
+const authUserChip = document.getElementById('auth-user-chip');
+const userChipAvatar = document.getElementById('user-chip-avatar');
+const userChipName = document.getElementById('user-chip-name');
+const userChipGoogle = document.getElementById('user-chip-google');
+const openLoginBtn = document.getElementById('open-login-btn');
+const openRegisterBtn = document.getElementById('open-register-btn');
+const gateLoginBtn = document.getElementById('gate-login-btn');
+const gateRegisterBtn = document.getElementById('gate-register-btn');
+const gateGoogleBtn = document.getElementById('gate-google-btn');
+const logoutBtn = document.getElementById('logout-btn');
+
+// Modal & Auth Forms
+const authModal = document.getElementById('auth-modal');
+const closeAuthModalBtn = document.getElementById('close-auth-modal');
+const authModalTitle = document.getElementById('auth-modal-title');
+const authModalSubtitle = document.getElementById('auth-modal-subtitle');
+const tabLogin = document.getElementById('tab-login');
+const tabRegister = document.getElementById('tab-register');
+const modalGoogleBtn = document.getElementById('modal-google-btn');
+const loginForm = document.getElementById('login-form');
+const loginEmailInput = document.getElementById('login-email');
+const loginPasswordInput = document.getElementById('login-password');
+const loginSubmitBtn = document.getElementById('login-submit-btn');
+const registerForm = document.getElementById('register-form');
+const registerNameInput = document.getElementById('register-name');
+const registerEmailInput = document.getElementById('register-email');
+const registerPasswordInput = document.getElementById('register-password');
+const registerSubmitBtn = document.getElementById('register-submit-btn');
+const authErrorEl = document.getElementById('auth-error');
+
+// Client application state
+let currentUser = null;
+let googleEnabled = false;
+let authMode = 'login';
 let lottieSuccessAnim = null;
 let toastHideTimer = null;
 let lastRenderedCount = null;
@@ -36,6 +77,16 @@ function escapeHtml(text) {
     "'": '&#39;',
   };
   return str.replace(/[&<>"']/g, (char) => replacements[char]);
+}
+
+/**
+ * Validates that an avatar URL uses HTTPS before rendering an <img> tag.
+ */
+function getSafeAvatarUrl(url) {
+  if (typeof url === 'string' && url.startsWith('https://')) {
+    return url;
+  }
+  return null;
 }
 
 /**
@@ -118,27 +169,60 @@ function updateCharCounter() {
 }
 
 /**
- * Displays an error message directly under the feedback form.
+ * Shows or clears an error message directly under the feedback form.
  */
 function showError(message) {
   formError.textContent = message;
   formError.hidden = false;
 }
 
-/**
- * Hides and clears the form error alert box.
- */
 function clearError() {
   formError.textContent = '';
   formError.hidden = true;
 }
 
 /**
+ * Shows or clears an error message inside the authentication modal or gate.
+ */
+function showAuthError(message) {
+  authErrorEl.textContent = message;
+  authErrorEl.hidden = false;
+}
+
+function clearAuthError() {
+  authErrorEl.textContent = '';
+  authErrorEl.hidden = true;
+}
+
+function showGateNotice(message) {
+  if (!gateNotice) {
+    return;
+  }
+  gateNotice.textContent = message;
+  gateNotice.hidden = false;
+}
+
+function clearGateNotice() {
+  if (!gateNotice) {
+    return;
+  }
+  gateNotice.textContent = '';
+  gateNotice.hidden = true;
+}
+
+/**
  * Plays the Lottie checkmark animation (or a clean SVG fallback offline) inside #success-toast.
  */
-function showSuccessToast() {
+function showSuccessToast(title = 'Feedback posted!', subtitle = 'Your message is now live on the wall.') {
   if (!successToast || !lottieContainer) {
     return;
+  }
+
+  if (toastTitleEl) {
+    toastTitleEl.textContent = title;
+  }
+  if (toastSubtitleEl) {
+    toastSubtitleEl.textContent = subtitle;
   }
 
   if (toastHideTimer) {
@@ -183,6 +267,263 @@ function showSuccessToast() {
 }
 
 /**
+ * Renders the avatar image (when HTTPS Google avatar is present) or initials fallback safely.
+ */
+function buildAvatarHtml(name, avatarUrl) {
+  const safeAvatar = getSafeAvatarUrl(avatarUrl);
+  if (safeAvatar) {
+    return `<img src="${escapeHtml(safeAvatar)}" alt="" referrerpolicy="no-referrer" />`;
+  }
+  return escapeHtml(getInitials(name));
+}
+
+/**
+ * Synchronizes header account controls and the feedback form gate with currentUser.
+ */
+function updateAuthUI() {
+  if (currentUser) {
+    authGuestActions.hidden = true;
+    authUserChip.hidden = false;
+    userChipAvatar.innerHTML = buildAvatarHtml(currentUser.name, currentUser.avatar_url);
+    userChipName.textContent = currentUser.name;
+    userChipGoogle.hidden = currentUser.auth_provider !== 'google';
+
+    formAuthGate.hidden = true;
+    feedbackForm.hidden = false;
+    clearGateNotice();
+    postingAsName.textContent = currentUser.name;
+    postingAsEmail.textContent = currentUser.email;
+
+    if (!nameInput.value.trim()) {
+      nameInput.value = currentUser.name;
+    }
+  } else {
+    authGuestActions.hidden = false;
+    authUserChip.hidden = true;
+    userChipAvatar.innerHTML = '';
+    userChipName.textContent = '';
+    userChipGoogle.hidden = true;
+
+    formAuthGate.hidden = false;
+    feedbackForm.hidden = true;
+    postingAsName.textContent = '';
+    postingAsEmail.textContent = '';
+  }
+
+  window.BatStateScene?.refreshCardEffects();
+}
+
+/**
+ * Switches the authentication modal between Log In and Create Account views.
+ */
+function setAuthMode(mode) {
+  authMode = mode === 'register' ? 'register' : 'login';
+  clearAuthError();
+
+  const isRegister = authMode === 'register';
+  tabLogin.classList.toggle('is-active', !isRegister);
+  tabRegister.classList.toggle('is-active', isRegister);
+  tabLogin.setAttribute('aria-selected', String(!isRegister));
+  tabRegister.setAttribute('aria-selected', String(isRegister));
+
+  loginForm.hidden = isRegister;
+  registerForm.hidden = !isRegister;
+
+  if (isRegister) {
+    authModalTitle.textContent = 'Create Your Account';
+    authModalSubtitle.textContent = 'Join BatStateWall or sign in instantly with Gmail';
+  } else {
+    authModalTitle.textContent = 'Welcome Back';
+    authModalSubtitle.textContent = 'Sign in to share feedback on BatStateWall';
+  }
+}
+
+function openAuthModal(mode = 'login') {
+  setAuthMode(mode);
+  authModal.hidden = false;
+  document.body.style.overflow = 'hidden';
+
+  if (mode === 'register') {
+    registerNameInput.focus();
+  } else {
+    loginEmailInput.focus();
+  }
+}
+
+function closeAuthModal() {
+  authModal.hidden = true;
+  document.body.style.overflow = '';
+  clearAuthError();
+}
+
+/**
+ * Checks whether Google OAuth is configured before navigating to /api/auth/google.
+ */
+function handleGoogleClick(event) {
+  if (!googleEnabled) {
+    event.preventDefault();
+    if (authModal.hidden) {
+      openAuthModal('login');
+    }
+    showAuthError(
+      'Google login is not configured on this server yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env or Render.'
+    );
+  }
+}
+
+/**
+ * Loads current user session, Google OAuth status, and handles OAuth callback query params.
+ */
+async function loadAuthState() {
+  const params = new URLSearchParams(window.location.search);
+  const authResult = params.get('auth');
+  const authError = params.get('auth_error');
+
+  try {
+    const [meRes, cfgRes] = await Promise.all([fetch('/api/auth/me'), fetch('/api/auth/config')]);
+    const meData = await meRes.json().catch(() => null);
+    const cfgData = await cfgRes.json().catch(() => null);
+
+    currentUser = meData && meData.user ? meData.user : null;
+    googleEnabled = Boolean(cfgData && cfgData.googleEnabled);
+  } catch (err) {
+    console.error('Failed to load authentication state:', err);
+    currentUser = null;
+  }
+
+  updateAuthUI();
+
+  if (authResult === 'google_success' && currentUser) {
+    window.BatStateScene?.pulseSuccess();
+    showSuccessToast('Signed in with Google!', `Welcome, ${currentUser.name}`);
+  } else if (authError) {
+    const messages = {
+      google_not_configured:
+        'Google login is not configured yet. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to .env or Render.',
+      google_cancelled: 'Google sign-in was cancelled.',
+      google_failed: 'Google sign-in failed. Please try again.',
+    };
+    showGateNotice(messages[authError] || 'Unable to sign in with Google.');
+  }
+
+  if (authResult || authError) {
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+}
+
+/**
+ * Handles email + password login form submission.
+ */
+async function handleLoginSubmit(event) {
+  event.preventDefault();
+  clearAuthError();
+
+  const btnLabel = loginSubmitBtn.querySelector('.btn-label');
+  loginSubmitBtn.disabled = true;
+  if (btnLabel) {
+    btnLabel.textContent = 'Logging in...';
+  }
+
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: loginEmailInput.value,
+        password: loginPasswordInput.value,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showAuthError(data.error || 'Could not log in. Please try again.');
+      window.BatStateScene?.pulseError();
+      return;
+    }
+
+    currentUser = data.user;
+    loginForm.reset();
+    closeAuthModal();
+    updateAuthUI();
+    window.BatStateScene?.pulseSuccess();
+    showSuccessToast('Welcome back!', `Signed in as ${currentUser.name}`);
+  } catch (err) {
+    console.error('Login failed:', err);
+    showAuthError('Network error while logging in. Please try again.');
+    window.BatStateScene?.pulseError();
+  } finally {
+    loginSubmitBtn.disabled = false;
+    if (btnLabel) {
+      btnLabel.textContent = 'Log In';
+    }
+  }
+}
+
+/**
+ * Handles new account registration form submission.
+ */
+async function handleRegisterSubmit(event) {
+  event.preventDefault();
+  clearAuthError();
+
+  const btnLabel = registerSubmitBtn.querySelector('.btn-label');
+  registerSubmitBtn.disabled = true;
+  if (btnLabel) {
+    btnLabel.textContent = 'Creating account...';
+  }
+
+  try {
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: registerNameInput.value,
+        email: registerEmailInput.value,
+        password: registerPasswordInput.value,
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showAuthError(data.error || 'Could not create account. Please try again.');
+      window.BatStateScene?.pulseError();
+      return;
+    }
+
+    currentUser = data.user;
+    registerForm.reset();
+    closeAuthModal();
+    updateAuthUI();
+    window.BatStateScene?.pulseSuccess();
+    showSuccessToast('Account created!', `Welcome to BatStateWall, ${currentUser.name}`);
+  } catch (err) {
+    console.error('Registration failed:', err);
+    showAuthError('Network error while creating account. Please try again.');
+    window.BatStateScene?.pulseError();
+  } finally {
+    registerSubmitBtn.disabled = false;
+    if (btnLabel) {
+      btnLabel.textContent = 'Create Account';
+    }
+  }
+}
+
+/**
+ * Logs out the current user and refreshes the form gate.
+ */
+async function handleLogout() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+  } catch (err) {
+    console.error('Logout failed:', err);
+  }
+  currentUser = null;
+  nameInput.value = '';
+  clearError();
+  updateAuthUI();
+}
+
+/**
  * Renders the list of feedback posts and updates both Total posts counters.
  */
 function renderPosts(items) {
@@ -215,8 +556,10 @@ function renderPosts(items) {
     .map((item, index) => {
       const safeId = escapeHtml(item.id);
       const safeName = escapeHtml(item.name);
-      const safeInitials = escapeHtml(getInitials(item.name));
+      const avatarInner = buildAvatarHtml(item.name, item.avatar_url);
       const tone = getAvatarTone(item.name);
+      const googleBadgeHtml =
+        item.auth_provider === 'google' ? '<span class="post-google-tag">Gmail</span>' : '';
       const safeMessage = escapeHtml(item.message);
       const formattedDate = escapeHtml(formatDate(item.created_at));
       const safeIsoDate = escapeHtml(item.created_at);
@@ -224,11 +567,12 @@ function renderPosts(items) {
 
       return `
         <article class="post-card" style="animation-delay: ${delayMs}ms">
-          <div class="post-avatar" data-tone="${tone}" aria-hidden="true">${safeInitials}</div>
+          <div class="post-avatar" data-tone="${tone}" aria-hidden="true">${avatarInner}</div>
           <div class="post-body">
             <div class="post-meta">
               <div class="post-identity">
                 <span class="post-author">${safeName}</span>
+                ${googleBadgeHtml}
                 <span class="post-id">#${safeId}</span>
               </div>
               <time class="post-date" datetime="${safeIsoDate}">
@@ -299,18 +643,29 @@ async function handleFormSubmit(event) {
 
     const data = await response.json().catch(() => ({}));
 
+    if (response.status === 401) {
+      currentUser = null;
+      updateAuthUI();
+      showGateNotice(data.error || 'Please log in to post feedback.');
+      openAuthModal('login');
+      return;
+    }
+
     if (!response.ok) {
       showError(data.error || 'Could not submit your feedback. Please try again.');
       window.BatStateScene?.pulseError();
       return;
     }
 
-    // Clear inputs, reset counter, play 3D/Lottie success reactions, and reload posts
-    feedbackForm.reset();
+    // Reset message while keeping the signed-in user's name pre-filled
+    messageInput.value = '';
+    if (currentUser && !nameInput.value.trim()) {
+      nameInput.value = currentUser.name;
+    }
     updateCharCounter();
     clearError();
     window.BatStateScene?.pulseSuccess();
-    showSuccessToast();
+    showSuccessToast('Feedback posted!', 'Your message is now live on the wall.');
     await loadPosts();
   } catch (err) {
     console.error('Failed to submit feedback:', err);
@@ -335,7 +690,47 @@ if (siteHeader) {
   );
 }
 
-// Wire up UI event listeners and subtle 3D scene typing pulse
+// Wire up UI event listeners
+openLoginBtn?.addEventListener('click', () => openAuthModal('login'));
+openRegisterBtn?.addEventListener('click', () => openAuthModal('register'));
+gateLoginBtn?.addEventListener('click', () => openAuthModal('login'));
+gateRegisterBtn?.addEventListener('click', () => openAuthModal('register'));
+gateGoogleBtn?.addEventListener('click', handleGoogleClick);
+modalGoogleBtn?.addEventListener('click', handleGoogleClick);
+logoutBtn?.addEventListener('click', handleLogout);
+
+closeAuthModalBtn?.addEventListener('click', closeAuthModal);
+authModal?.addEventListener('click', (event) => {
+  if (event.target instanceof HTMLElement && event.target.dataset.closeModal === 'true') {
+    closeAuthModal();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && authModal && !authModal.hidden) {
+    closeAuthModal();
+  }
+});
+
+tabLogin?.addEventListener('click', () => setAuthMode('login'));
+tabRegister?.addEventListener('click', () => setAuthMode('register'));
+
+document.querySelectorAll('.btn-toggle-pass').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const targetId = btn.dataset.target;
+    const input = targetId ? document.getElementById(targetId) : null;
+    if (!input) {
+      return;
+    }
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? 'Hide' : 'Show';
+    btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  });
+});
+
+loginForm?.addEventListener('submit', handleLoginSubmit);
+registerForm?.addEventListener('submit', handleRegisterSubmit);
+
 nameInput.addEventListener('input', () => {
   window.BatStateScene?.pulseTyping();
 });
@@ -347,6 +742,7 @@ messageInput.addEventListener('input', () => {
 
 feedbackForm.addEventListener('submit', handleFormSubmit);
 
-// Initialize counter and load existing posts on page load
+// Initialize counter, authentication state, and community posts on page load
 updateCharCounter();
+loadAuthState();
 loadPosts();
