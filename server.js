@@ -638,7 +638,7 @@ app.get('/api/items', async (req, res) => {
         FROM sudoku_user_stats
         WHERE games_won > 0
       )
-      SELECT i.id, i.name, i.message, i.user_id, i.created_at,
+      SELECT i.id, i.name, i.message, i.user_id, i.created_at, i.updated_at,
              u.avatar_url, u.auth_provider,
              sr.sudoku_rank,
              COALESCE(lc.like_count, 0)::int AS like_count,
@@ -695,7 +695,7 @@ app.post('/api/items', requireAuth, async (req, res) => {
     const query = `
       INSERT INTO items (name, message, user_id)
       VALUES ($1, $2, $3)
-      RETURNING id, name, message, user_id, created_at
+      RETURNING id, name, message, user_id, created_at, updated_at
     `;
     const values = [trimmedName, trimmedMessage, req.user.id];
     const result = await pool.query(query, values);
@@ -745,7 +745,7 @@ app.get('/api/items/:id', async (req, res) => {
         FROM sudoku_user_stats
         WHERE games_won > 0
       )
-      SELECT i.id, i.name, i.message, i.user_id, i.created_at,
+      SELECT i.id, i.name, i.message, i.user_id, i.created_at, i.updated_at,
              u.avatar_url, u.auth_provider,
              sr.sudoku_rank,
              COALESCE(lc.like_count, 0)::int AS like_count,
@@ -772,6 +772,57 @@ app.get('/api/items/:id', async (req, res) => {
     return res.status(500).json({ error: 'Failed to load the requested message.' });
   }
 });
+
+// PUT / PATCH /api/items/:id - Update a post's message owned by the authenticated user
+async function handleUpdateItem(req, res) {
+  const parsed = parseItemId(req.params.id);
+  if (parsed.error) {
+    return res.status(parsed.status).json({ error: parsed.error });
+  }
+
+  const rawMessage = req.body ? req.body.message : '';
+  const trimmedMessage = typeof rawMessage === 'string' ? rawMessage.trim() : '';
+
+  if (!trimmedMessage) {
+    return res.status(400).json({ error: 'Message is required.' });
+  }
+  if (trimmedMessage.length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({ error: 'Message must be 280 characters or fewer.' });
+  }
+  if (containsProfanity(trimmedMessage)) {
+    return res.status(400).json({ error: 'Please keep your post respectful. Profanity is not allowed.' });
+  }
+
+  try {
+    const existing = await pool.query('SELECT id, user_id FROM items WHERE id = $1', [parsed.id]);
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Item not found.' });
+    }
+    if (existing.rows[0].user_id !== req.user.id) {
+      return res.status(403).json({ error: 'You can only edit your own posts.' });
+    }
+
+    const updated = await pool.query(
+      `UPDATE items
+       SET message = $1,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, name, message, user_id, created_at, updated_at`,
+      [trimmedMessage, parsed.id]
+    );
+
+    return res.status(200).json({
+      ...updated.rows[0],
+      is_owner: true,
+    });
+  } catch (err) {
+    console.error('Error updating item:', err);
+    return res.status(500).json({ error: 'Failed to update post.' });
+  }
+}
+
+app.put('/api/items/:id', requireAuth, handleUpdateItem);
+app.patch('/api/items/:id', requireAuth, handleUpdateItem);
 
 // DELETE /api/items/:id - Delete a post owned by the authenticated user
 app.delete('/api/items/:id', requireAuth, async (req, res) => {

@@ -867,12 +867,6 @@ body {
   height: 12px;
 }
 
-.post-edited-tag {
-  font-size: 12px;
-  color: var(--text-secondary);
-  font-style: italic;
-}
-
 /* Overflow 3-dot Menu */
 .post-menu-wrap {
   position: relative;

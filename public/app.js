@@ -324,9 +324,11 @@ function updateAuthUI() {
 
 function updateComposerState() {
   const length = messageInput.value.length;
-  const hasText = messageInput.value.trim().length > 0;
+  const trimmed = messageInput.value.trim();
+  const hasText = trimmed.length > 0;
+  const isUnchangedEdit = editingPostId !== null && trimmed === editingOriginalMessage.trim();
 
-  submitBtn.disabled = !hasText;
+  submitBtn.disabled = !hasText || isUnchangedEdit;
 
   // Auto-grow textarea height smoothly without manual resize handle
   messageInput.style.height = 'auto';
@@ -349,12 +351,48 @@ function openComposerModal() {
     return;
   }
   closeAllMenus();
+  editingPostId = null;
+  editingOriginalMessage = '';
+  if (composerModalTitle) {
+    composerModalTitle.textContent = 'Create post';
+  }
+  if (submitBtnLabel) {
+    submitBtnLabel.textContent = 'Post';
+  }
   formError.textContent = '';
   formError.hidden = true;
   composerModal.hidden = false;
   syncBodyScrollLock();
   updateComposerState();
   messageInput.focus();
+}
+
+function openEditPostModal(postId) {
+  if (!currentUser) {
+    openAuthModal('Sign in with Google to edit your post.');
+    return;
+  }
+  const post = posts.find((p) => p.id === postId);
+  if (!post || !post.is_owner || post._optimistic) {
+    return;
+  }
+  closeAllMenus();
+  editingPostId = postId;
+  editingOriginalMessage = post.message;
+  if (composerModalTitle) {
+    composerModalTitle.textContent = 'Edit post';
+  }
+  if (submitBtnLabel) {
+    submitBtnLabel.textContent = 'Save changes';
+  }
+  formError.textContent = '';
+  formError.hidden = true;
+  messageInput.value = post.message;
+  composerModal.hidden = false;
+  syncBodyScrollLock();
+  updateComposerState();
+  messageInput.focus();
+  messageInput.setSelectionRange(messageInput.value.length, messageInput.value.length);
 }
 
 function openComposerWithText(prefillText) {
@@ -371,6 +409,18 @@ function closeComposerModal() {
   composerModal.hidden = true;
   formError.textContent = '';
   formError.hidden = true;
+  if (editingPostId !== null) {
+    editingPostId = null;
+    editingOriginalMessage = '';
+    messageInput.value = '';
+    if (composerModalTitle) {
+      composerModalTitle.textContent = 'Create post';
+    }
+    if (submitBtnLabel) {
+      submitBtnLabel.textContent = 'Post';
+    }
+    updateComposerState();
+  }
   syncBodyScrollLock();
 }
 
@@ -599,6 +649,11 @@ function renderPostCardHtml(item) {
                 <line x1="2" y1="12" x2="22" y2="12" />
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
               </svg>
+              ${
+                item.updated_at
+                  ? `<span aria-hidden="true">&middot;</span><span class="post-edited-tag" title="Edited ${escapeHtml(formatFullDate(item.updated_at))}">Edited</span>`
+                  : ''
+              }
             </div>
           </div>
         </div>
@@ -623,8 +678,11 @@ function renderPostCardHtml(item) {
               <span>Report post</span>
             </button>
             ${
-              isOwner
-                ? `<button type="button" class="dropdown-item danger" data-action="delete-post" data-post-id="${id}" role="menuitem">
+              isOwner && !item._optimistic
+                ? `<button type="button" class="dropdown-item" data-action="edit-post" data-post-id="${id}" role="menuitem">
+                    <span>Edit post</span>
+                  </button>
+                  <button type="button" class="dropdown-item danger" data-action="delete-post" data-post-id="${id}" role="menuitem">
                     <span>Delete post</span>
                   </button>`
                 : ''
@@ -1131,7 +1189,65 @@ async function handleLogout() {
 }
 
 /**
- * Optimistically prepends new post and reconciles with POST /api/items.
+ * Sends an edited post message to PUT /api/items/:id and updates the feed card.
+ */
+async function handleEditPostSubmit(postId, trimmedMessage) {
+  formError.hidden = true;
+  submitBtn.disabled = true;
+  if (submitBtnLabel) {
+    submitBtnLabel.textContent = 'Saving...';
+  }
+
+  try {
+    const response = await fetch(`/api/items/${postId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: trimmedMessage }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (response.status === 401) {
+      currentUser = null;
+      updateAuthUI();
+      closeComposerModal();
+      openAuthModal();
+      return;
+    }
+
+    if (!response.ok) {
+      formError.textContent = data.error || 'Could not update your post.';
+      formError.hidden = false;
+      window.BatStateScene?.pulseError();
+      return;
+    }
+
+    posts = posts.map((p) =>
+      p.id === postId
+        ? { ...p, message: data.message, updated_at: data.updated_at }
+        : p
+    );
+    renderPosts();
+    closeComposerModal();
+    window.BatStateScene?.pulseSuccess();
+    showSuccessToast('Post updated!', 'Your changes are now live on the wall.');
+  } catch (err) {
+    console.error('Failed to update post:', err);
+    formError.textContent = 'Network error while saving changes. Please try again.';
+    formError.hidden = false;
+    window.BatStateScene?.pulseError();
+  } finally {
+    if (editingPostId !== null) {
+      if (submitBtnLabel) {
+        submitBtnLabel.textContent = 'Save changes';
+      }
+      updateComposerState();
+    }
+  }
+}
+
+/**
+ * Optimistically prepends new post and reconciles with POST /api/items, or saves an edit.
  */
 async function handleFormSubmit(event) {
   event.preventDefault();
@@ -1145,6 +1261,11 @@ async function handleFormSubmit(event) {
   if (!trimmedMessage) {
     formError.textContent = 'Message is required.';
     formError.hidden = false;
+    return;
+  }
+
+  if (editingPostId !== null) {
+    await handleEditPostSubmit(editingPostId, trimmedMessage);
     return;
   }
 
@@ -1424,6 +1545,8 @@ postsList?.addEventListener('click', (event) => {
     handleSharePost(postId, false);
   } else if (action === 'report-post') {
     handleReportPost(postId);
+  } else if (action === 'edit-post') {
+    openEditPostModal(postId);
   } else if (action === 'delete-post') {
     handleDeletePost(postId, actionEl);
   }
