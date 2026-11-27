@@ -100,6 +100,7 @@ async function ensureSchema() {
         name TEXT NOT NULL,
         message TEXT NOT NULL,
         user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        updated_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
@@ -107,6 +108,7 @@ async function ensureSchema() {
     await pool.query(
       'ALTER TABLE items ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;'
     );
+    await pool.query('ALTER TABLE items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;');
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS likes (

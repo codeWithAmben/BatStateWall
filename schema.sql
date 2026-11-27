@@ -21,11 +21,13 @@ CREATE TABLE IF NOT EXISTS items (
   name TEXT NOT NULL,
   message TEXT NOT NULL,
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Safe migration if you already created the "items" table earlier without user_id
+-- Safe migration if you already created the "items" table earlier without user_id or updated_at
 ALTER TABLE items ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
 
 -- Social interaction tables (Phase 3)
 CREATE TABLE IF NOT EXISTS likes (

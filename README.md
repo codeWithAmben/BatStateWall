@@ -306,6 +306,7 @@ Base URL (local): `http://localhost:3000`
 | Method & Route | Auth | Description | Status Codes |
 |---|---|---|---|
 | `GET /api/stats` | Public | Returns `{ totalPosts, totalMembers, postsToday, latestPostId }` | `200`, `500` |
+| `PUT / PATCH /api/items/:id` | Owner | Updates a post's message owned by the signed-in user and sets `updated_at` | `200`, `400`, `401`, `403`, `404`, `500` |
 | `DELETE /api/items/:id` | Owner | Deletes a post owned by the signed-in user | `200`, `400`, `401`, `403`, `404`, `500` |
 | `POST /api/items/:id/like` | Required | Toggles a like and returns `{ post_id, liked, like_count }` | `200`, `400`, `401`, `404`, `500` |
 | `GET /api/items/:id/comments` | Public | Returns comments for a post ordered oldest first | `200`, `400`, `404`, `500` |
